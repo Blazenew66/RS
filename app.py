@@ -63,70 +63,49 @@ if run_button:
         # 显示进度
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
-        # 执行计算
-        with st.spinner("正在计算 RS 排名..."):
-            try:
+
+        try:
+            with st.spinner("正在计算 RS 排名..."):
                 status_text.text("正在获取股票数据...")
                 progress_bar.progress(25)
-            
-            # 运行排名系统
-            rankings_df = run_rs_ranking(
-                tickers=tickers,
-                save_csv=False,  # Streamlit 中不需要保存文件
-                print_report=False  # 不在控制台打印
-            )
-            
-            if rankings_df is not None and not rankings_df.empty:
-                progress_bar.progress(100)
-                status_text.text("✅ 计算完成！")
-                time.sleep(0.5)  # 短暂延迟让用户看到完成状态
-                
-                # 清除进度条
-                progress_bar.empty()
-                status_text.empty()
-                
-                # 显示结果
-                st.success(f"✅ 成功计算 {len(rankings_df)} 只股票的 RS 排名")
-                
-                # 统计信息卡片
-                st.subheader("📈 统计信息")
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("总股票数", len(rankings_df))
-                with col2:
-                    st.metric("最高 RS 分数", f"{rankings_df['rs_score'].max():.1f}")
-                with col3:
-                    st.metric("最低 RS 分数", f"{rankings_df['rs_score'].min():.1f}")
-                with col4:
-                    st.metric("平均 RS 分数", f"{rankings_df['rs_score'].mean():.1f}")
-                
-                # 显示 Top N
-                st.subheader(f"🏆 RS Top {TOP_N_DISPLAY}")
-                top_df = rankings_df.head(TOP_N_DISPLAY).copy()
-                # 格式化显示
-                top_df['rs_raw'] = top_df['rs_raw'].apply(lambda x: f"{x:.2f}%")
-                top_df['rs_score'] = top_df['rs_score'].apply(lambda x: f"{x:.1f}")
-                
-                st.dataframe(
-                    top_df[['ticker', 'rs_raw', 'rs_score', 'rank']],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "ticker": "股票代码",
-                        "rs_raw": "RS 原始值",
-                        "rs_score": "RS 分数",
-                        "rank": "排名"
-                    }
+
+                rankings_df = run_rs_ranking(
+                    tickers=tickers,
+                    save_csv=False,
+                    print_report=False
                 )
-                
-                # 显示完整排名
-                with st.expander("📊 查看完整排名", expanded=False):
-                    full_df = rankings_df.copy()
-                    full_df['rs_raw'] = full_df['rs_raw'].apply(lambda x: f"{x:.2f}%")
-                    full_df['rs_score'] = full_df['rs_score'].apply(lambda x: f"{x:.1f}")
+
+                if rankings_df is not None and not rankings_df.empty:
+                    progress_bar.progress(100)
+                    status_text.text("✅ 计算完成！")
+                    time.sleep(0.5)
+
+                    progress_bar.empty()
+                    status_text.empty()
+
+                    st.success(f"✅ 成功计算 {len(rankings_df)} 只股票的 RS 排名")
+
+                    # 统计信息卡片
+                    st.subheader("📈 统计信息")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("总股票数", len(rankings_df))
+                    with col2:
+                        st.metric("最高 RS 分数", f"{rankings_df['rs_score'].max():.1f}")
+                    with col3:
+                        st.metric("最低 RS 分数", f"{rankings_df['rs_score'].min():.1f}")
+                    with col4:
+                        st.metric("平均 RS 分数", f"{rankings_df['rs_score'].mean():.1f}")
+
+                    # 显示 Top N
+                    st.subheader(f"🏆 RS Top {TOP_N_DISPLAY}")
+                    top_df = rankings_df.head(TOP_N_DISPLAY).copy()
+                    # 格式化显示
+                    top_df['rs_raw'] = top_df['rs_raw'].apply(lambda x: f"{x:.2f}%")
+                    top_df['rs_score'] = top_df['rs_score'].apply(lambda x: f"{x:.1f}")
+
                     st.dataframe(
-                        full_df[['ticker', 'rs_raw', 'rs_score', 'rank']],
+                        top_df[['ticker', 'rs_raw', 'rs_score', 'rank']],
                         use_container_width=True,
                         hide_index=True,
                         column_config={
@@ -136,29 +115,44 @@ if run_button:
                             "rank": "排名"
                         }
                     )
-                
-                # 下载 CSV
-                csv = rankings_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 下载 CSV 文件",
-                    data=csv,
-                    file_name="rs_rankings.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-            else:
-                progress_bar.empty()
-                status_text.empty()
-                st.error("❌ 未能获取股票数据，请检查网络连接或稍后重试")
-                st.info("💡 提示：可能是网络问题或 Yahoo Finance 暂时不可用")
-                
-            except Exception as e:
-                progress_bar.empty()
-                status_text.empty()
-                st.error(f"❌ 发生错误: {str(e)}")
-                with st.expander("查看详细错误信息"):
-                    st.exception(e)
+
+                    # 显示完整排名
+                    with st.expander("📊 查看完整排名", expanded=False):
+                        full_df = rankings_df.copy()
+                        full_df['rs_raw'] = full_df['rs_raw'].apply(lambda x: f"{x:.2f}%")
+                        full_df['rs_score'] = full_df['rs_score'].apply(lambda x: f"{x:.1f}")
+                        st.dataframe(
+                            full_df[['ticker', 'rs_raw', 'rs_score', 'rank']],
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "ticker": "股票代码",
+                                "rs_raw": "RS 原始值",
+                                "rs_score": "RS 分数",
+                                "rank": "排名"
+                            }
+                        )
+
+                    # 下载 CSV
+                    csv = rankings_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 下载 CSV 文件",
+                        data=csv,
+                        file_name="rs_rankings.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                else:
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.error("❌ 未能获取股票数据，请检查网络连接或稍后重试")
+                    st.info("💡 提示：可能是网络问题或 Yahoo Finance 暂时不可用")
+        except Exception as e:
+            progress_bar.empty()
+            status_text.empty()
+            st.error(f"❌ 发生错误: {str(e)}")
+            with st.expander("查看详细错误信息"):
+                st.exception(e)
 
 else:
     # 初始状态显示说明
