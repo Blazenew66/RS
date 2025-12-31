@@ -1,6 +1,18 @@
 """
 Streamlit Web 应用：美股 RS 排名系统
 """
+import sys
+import os
+
+# 添加项目根目录到 Python 路径（解决 Streamlit Cloud 导入问题）
+# 获取当前文件所在目录（rs_system/）
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 获取项目根目录（rs_system 的父目录）
+project_root = os.path.dirname(current_dir)
+# 将项目根目录添加到 Python 路径的最前面
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import streamlit as st
 import pandas as pd
 from rs_system.main import run_rs_ranking, load_ticker_list
