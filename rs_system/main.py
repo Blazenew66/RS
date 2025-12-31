@@ -11,7 +11,8 @@ from rs_system.config import (
     TICKER_LIST_FILE,
     OUTPUT_DIR,
     LOG_FILE,
-    TOP_N_DISPLAY
+    TOP_N_DISPLAY,
+    MARKET_BENCHMARK
 )
 from rs_system.data_fetcher import DataFetcher
 from rs_system.rs_calculator import RSCalculator
@@ -98,7 +99,7 @@ def run_rs_ranking(
     logger.info(f"待处理股票数量: {len(tickers)}")
     
     # 2. 获取数据
-    logger.info("步骤 1/4: 获取股票数据...")
+    logger.info("步骤 1/5: 获取股票数据...")
     fetcher = DataFetcher()
     ticker_data = fetcher.fetch_multiple_tickers(tickers)
     
@@ -106,22 +107,32 @@ def run_rs_ranking(
         logger.error("未能获取任何股票数据，程序终止")
         return None
     
-    # 3. 计算 RS
-    logger.info("步骤 2/4: 计算 RS 原始值...")
+    # 2.5. 获取市场基准数据（SPY）
+    logger.info("步骤 2/5: 获取市场基准数据（{}）...".format(MARKET_BENCHMARK))
+    market_data = fetcher.fetch_single_ticker(MARKET_BENCHMARK)
+    
+    if market_data is None or market_data.empty:
+        logger.error(f"未能获取市场基准数据（{MARKET_BENCHMARK}），程序终止")
+        return None
+    
+    logger.info(f"成功获取市场基准数据，共 {len(market_data)} 条记录")
+    
+    # 3. 计算 RS（IBD 风格，相对于市场基准）
+    logger.info("步骤 3/5: 计算 IBD 风格 RS 原始值（相对于市场基准）...")
     calculator = RSCalculator()
-    rs_raw_dict = calculator.calculate_rs_for_all(ticker_data)
+    rs_raw_dict = calculator.calculate_rs_for_all(ticker_data, market_data)
     
     if not rs_raw_dict:
         logger.error("未能计算任何 RS 值，程序终止")
         return None
     
     # 4. 排名
-    logger.info("步骤 3/4: 生成排名...")
+    logger.info("步骤 4/5: 生成排名（百分位排名 1-99）...")
     ranker = Ranker()
     rankings_df = ranker.rank_rs_scores(rs_raw_dict)
     
     # 5. 生成报告
-    logger.info("步骤 4/4: 生成报告...")
+    logger.info("步骤 5/5: 生成报告...")
     reporter = Reporter()
     
     if save_csv:

@@ -92,17 +92,18 @@ class Reporter:
         print(f"RS Top {top_n} 股票:")
         print("=" * 80)
         
-        # 格式化输出
-        print(f"{'排名':<6} {'股票代码':<10} {'RS分数':<10} {'RS原始值':<15} {'涨幅%':<10}")
+        # 格式化输出（IBD 风格）
+        print(f"{'排名':<6} {'股票代码':<10} {'RS分数':<10} {'加权RS':<15} {'RS Line':<15}")
         print("-" * 80)
         
         for _, row in top_df.iterrows():
+            rs_line = row.get('rs_line', 0)  # 兼容没有rs_line的情况
             print(
                 f"{row['rank']:<6} "
                 f"{row['ticker']:<10} "
                 f"{row['rs_score']:<10} "
                 f"{row['rs_raw']:<15.2f} "
-                f"{row['rs_raw']:<10.2f}"
+                f"{rs_line:<15.4f}"
             )
         
         # 显示 Bottom N（可选）
@@ -111,16 +112,17 @@ class Reporter:
         print("=" * 80)
         
         bottom_df = rankings_df.tail(min(5, len(rankings_df)))
-        print(f"{'排名':<6} {'股票代码':<10} {'RS分数':<10} {'RS原始值':<15} {'涨幅%':<10}")
+        print(f"{'排名':<6} {'股票代码':<10} {'RS分数':<10} {'加权RS':<15} {'RS Line':<15}")
         print("-" * 80)
         
         for _, row in bottom_df.iterrows():
+            rs_line = row.get('rs_line', 0)  # 兼容没有rs_line的情况
             print(
                 f"{row['rank']:<6} "
                 f"{row['ticker']:<10} "
                 f"{row['rs_score']:<10} "
                 f"{row['rs_raw']:<15.2f} "
-                f"{row['rs_raw']:<10.2f}"
+                f"{rs_line:<15.4f}"
             )
         
         print("\n" + "=" * 80)
