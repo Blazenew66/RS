@@ -36,17 +36,23 @@ def _get_cert_path():
 
 # 设置证书路径（优先使用 certifi 的证书）
 cert_path = _get_cert_path()
-if cert_path:
+if not VERIFY_SSL:
+    # 如果禁用验证，清空环境变量并禁用 SSL 验证
+    os.environ.pop('CURL_CA_BUNDLE', None)
+    os.environ.pop('REQUESTS_CA_BUNDLE', None)
+    os.environ.pop('SSL_CERT_FILE', None)
+    logger.info("已禁用 SSL 证书验证")
+elif cert_path:
     os.environ['CURL_CA_BUNDLE'] = cert_path
     os.environ['REQUESTS_CA_BUNDLE'] = cert_path
     os.environ['SSL_CERT_FILE'] = cert_path
     logger.info(f"已设置证书路径: {cert_path}")
-elif not VERIFY_SSL:
-    # 如果禁用验证且找不到证书，清空环境变量
-    os.environ['CURL_CA_BUNDLE'] = ''
-    os.environ['REQUESTS_CA_BUNDLE'] = ''
-    os.environ['SSL_CERT_FILE'] = ''
-    logger.warning("未找到证书文件，已禁用 SSL 验证")
+else:
+    # 如果找不到证书且需要验证，尝试清空环境变量
+    os.environ.pop('CURL_CA_BUNDLE', None)
+    os.environ.pop('REQUESTS_CA_BUNDLE', None)
+    os.environ.pop('SSL_CERT_FILE', None)
+    logger.warning("未找到证书文件，尝试禁用 SSL 验证")
 
 
 class DataFetcher:

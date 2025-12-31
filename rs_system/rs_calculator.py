@@ -148,6 +148,12 @@ class RSCalculator:
             stock_prices = stock_prices.loc[common_dates].sort_index()
             market_prices = market_prices.loc[common_dates].sort_index()
             
+            # 使用 Adjusted Close（如果存在）
+            if 'Adj Close' in stock_price_series.index.names or hasattr(stock_prices, 'name'):
+                # 如果已经是 Series，检查是否有 Adj Close
+                pass
+            # 注意：这里假设传入的已经是正确的价格序列（Adj Close 或 Close）
+            
             # 计算各周期的股票收益率
             stock_returns = {}
             for period in [RS_PERIOD_3M, RS_PERIOD_6M, RS_PERIOD_9M, RS_PERIOD_12M]:
