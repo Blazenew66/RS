@@ -15,7 +15,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from rs_system.market_ranking import get_sp500_tickers, calculate_market_wide_rs_ranking
+from rs_system.market_ranking import get_combined_index_tickers, calculate_market_wide_rs_ranking
 from rs_system.rs_calculator import RSCalculator
 from rs_system.indicators import (
     calculate_sma50_distance, 
@@ -67,6 +67,21 @@ st.markdown("""
     .dataframe {
         border-radius: 8px;
         overflow: hidden;
+        font-size: 1.1rem !important;
+    }
+    
+    /* 表格单元格内容居中 */
+    .dataframe td, .dataframe th {
+        text-align: center !important;
+        vertical-align: middle !important;
+        font-size: 1.1rem !important;
+        padding: 0.75rem !important;
+    }
+    
+    /* 表格数字样式 */
+    .dataframe tbody td {
+        font-size: 1.15rem !important;
+        font-weight: 500 !important;
     }
     
     /* RS Rating 高亮样式 */
@@ -122,8 +137,26 @@ st.markdown("""
     
     /* 统计卡片 */
     [data-testid="stMetricValue"] {
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 700;
+    }
+    
+    /* 整体字体增大 */
+    .stMarkdown, .stText, .stDataFrame {
+        font-size: 1.1rem !important;
+    }
+    
+    /* 标题字体 */
+    h1, h2, h3 {
+        font-size: 2.5rem !important;
+    }
+    
+    h2 {
+        font-size: 2rem !important;
+    }
+    
+    h3 {
+        font-size: 1.5rem !important;
     }
     
     /* 表格行悬停效果 */
@@ -135,13 +168,13 @@ st.markdown("""
 
 # 主标题
 st.markdown('<h1 class="main-title">📈 RS Ranking Pro</h1>', unsafe_allow_html=True)
-st.markdown("**专业级 IBD 风格相对强度排名系统 | 基于 S&P 500 市场范围分析**")
+st.markdown("**专业级 IBD 风格相对强度排名系统 | 基于 S&P 500 + NASDAQ 100 + Russell 1000 市场范围分析**")
 
 # 缓存装饰器
 @st.cache_data(ttl=3600)
-def get_cached_sp500_tickers():
-    """获取并缓存 S&P 500 股票列表"""
-    return get_sp500_tickers()
+def get_cached_combined_tickers():
+    """获取并缓存整合指数股票列表（S&P 500 + NASDAQ 100 + Russell 1000）"""
+    return get_combined_index_tickers()
 
 # 侧边栏配置
 with st.sidebar:
@@ -189,13 +222,16 @@ with st.sidebar:
     st.markdown("#### ℹ️ 系统说明")
     st.markdown("""
     **计算方法：**
-    - 市场范围排名（S&P 500）
+    - 市场范围排名（S&P 500 + NASDAQ 100 + Russell 1000）
     - IBD 风格加权 RS
     - Adjusted Close 价格
     
     **权重配置：**
     - 3个月：40%
     - 6/9/12个月：各20%
+    
+    **RS线创新高：**
+    - 🔥 表示 RS Line 达到 252 日高点
     """)
     
     # 执行按钮
@@ -211,22 +247,22 @@ if run_button:
         
         try:
             with st.spinner("正在计算市场范围 RS 排名..."):
-                # 步骤1: 获取 S&P 500 列表
-                status_text.text("📥 获取 S&P 500 股票列表...")
+                # 步骤1: 获取整合指数列表（S&P 500 + NASDAQ 100 + Russell 1000）
+                status_text.text("📥 获取市场股票列表（S&P 500 + NASDAQ 100 + Russell 1000）...")
                 progress_bar.progress(10)
-                market_tickers = get_cached_sp500_tickers()
+                market_tickers = get_cached_combined_tickers()
                 
-                if not market_tickers:
-                    st.error("❌ 无法获取 S&P 500 股票列表")
+                if not market_tickers or len(market_tickers) < 100:
+                    st.error(f"❌ 无法获取足够的市场股票列表（当前：{len(market_tickers) if market_tickers else 0} 只）")
                     st.stop()
                 
                 # 步骤2: 计算市场范围排名
-                status_text.text(f"📊 计算市场范围排名（基于 {len(market_tickers)} 只 S&P 500 股票）...")
+                status_text.text(f"📊 计算市场范围排名（基于 {len(market_tickers)} 只市场股票）...")
                 progress_bar.progress(30)
                 
                 result = calculate_market_wide_rs_ranking(
                     user_tickers=tickers,
-                    market_tickers=market_tickers[:200],
+                    market_tickers=market_tickers[:300],  # 使用更多股票
                     use_cache=True
                 )
                 
@@ -317,7 +353,7 @@ if run_button:
                 status_text.empty()
                 
                 # 成功提示
-                st.success(f"✅ 成功分析 {len(rankings_df)} 只股票（基于 S&P 500 市场分布）")
+                st.success(f"✅ 成功分析 {len(rankings_df)} 只股票（基于 S&P 500 + NASDAQ 100 + Russell 1000 市场分布）")
                 
                 # 统计信息卡片（美化）
                 st.markdown("---")
@@ -340,7 +376,7 @@ if run_button:
                 # 准备显示数据
                 display_df = rankings_df.copy()
                 
-                # RS Rating 显示（带颜色和52周新高标记）
+                # RS Rating 显示（带颜色和252日新高标记🔥）
                 def format_rs_rating(score, is_52w_high):
                     if score >= 80:
                         color_class = "rs-high"
@@ -352,7 +388,8 @@ if run_button:
                         color_class = "rs-low"
                         emoji = "🔴"
                     
-                    high_mark = " 🔵" if is_52w_high else ""
+                    # 使用🔥标记252日新高
+                    high_mark = " 🔥" if is_52w_high else ""
                     return f"{emoji} {score:.0f}{high_mark}"
                 
                 display_df['rs_rating_display'] = display_df.apply(
@@ -390,9 +427,12 @@ if run_button:
                     lambda x: f"{x:.2f}x" if pd.notna(x) else "N/A"
                 )
                 
+                # 按 RS Rating 降序排列
+                display_df = display_df.sort_values('rs_score', ascending=False).reset_index(drop=True)
+                
                 # 显示数据表格
                 st.markdown("---")
-                st.markdown("### 📈 RS 排名表格")
+                st.markdown("### 📈 RS 排名表格（按 RS Rating 降序排列）")
                 
                 # 表格列
                 table_cols = ['ticker', 'rs_rating_display', 'rs_1w_change', 'sma50_display', 
@@ -411,9 +451,9 @@ if run_button:
                     height=400
                 )
                 
-                # 说明：52周新高标记
+                # 说明：252日新高标记
                 if display_df['rs_line_52w_high'].any():
-                    st.info("🔵 标记表示 RS Line 达到 52 周新高")
+                    st.info("🔥 标记表示 RS Line 达到 252 日高点（创新高）")
                 
                 # 股票图表选择
                 st.markdown("---")

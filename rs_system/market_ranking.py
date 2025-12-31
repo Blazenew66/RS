@@ -14,31 +14,105 @@ logger = logging.getLogger(__name__)
 
 
 def get_sp500_tickers() -> List[str]:
-    """
-    获取 S&P 500 股票列表
-    
-    Returns:
-        S&P 500 股票代码列表
-    """
+    """获取 S&P 500 股票列表"""
     try:
-        # 方法1：从 Wikipedia 获取（最可靠）
         url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
         tables = pd.read_html(url)
         sp500_table = tables[0]
         tickers = sp500_table['Symbol'].tolist()
-        
-        # 处理特殊符号（如 BRK.B -> BRK-B）
         tickers = [ticker.replace('.', '-') for ticker in tickers]
-        
         logger.info(f"成功获取 S&P 500 股票列表，共 {len(tickers)} 只股票")
         return tickers
-        
     except Exception as e:
-        logger.warning(f"从 Wikipedia 获取 S&P 500 列表失败: {e}，使用备用列表")
+        logger.warning(f"从 Wikipedia 获取 S&P 500 列表失败: {e}")
+        return []
+
+
+def get_nasdaq100_tickers() -> List[str]:
+    """获取 NASDAQ 100 股票列表"""
+    try:
+        url = "https://en.wikipedia.org/wiki/NASDAQ-100"
+        tables = pd.read_html(url)
+        nasdaq_table = tables[4] if len(tables) > 4 else tables[0]  # 通常第5个表格是成分股列表
+        if 'Ticker' in nasdaq_table.columns:
+            tickers = nasdaq_table['Ticker'].tolist()
+        elif 'Symbol' in nasdaq_table.columns:
+            tickers = nasdaq_table['Symbol'].tolist()
+        else:
+            # 尝试第一列
+            tickers = nasdaq_table.iloc[:, 0].tolist()
         
-        # 方法2：备用列表（部分 S&P 500 股票）
-        # 这是一个简化的列表，实际使用时应该从 API 或文件获取完整列表
-        backup_tickers = [
+        tickers = [str(t).replace('.', '-').upper() for t in tickers if pd.notna(t)]
+        tickers = [t for t in tickers if t and len(t) <= 5]  # 过滤有效股票代码
+        logger.info(f"成功获取 NASDAQ 100 股票列表，共 {len(tickers)} 只股票")
+        return tickers
+    except Exception as e:
+        logger.warning(f"从 Wikipedia 获取 NASDAQ 100 列表失败: {e}")
+        return []
+
+
+def get_combined_index_tickers() -> List[str]:
+    """
+    整合标普500、纳斯达克100与罗素1000指数作为基准
+    移除重复标的
+    
+    Returns:
+        整合后的股票代码列表（去重）
+    """
+    all_tickers = []
+    
+    # 1. 获取 S&P 500
+    sp500_tickers = get_sp500_tickers()
+    all_tickers.extend(sp500_tickers)
+    logger.info(f"S&P 500: {len(sp500_tickers)} 只股票")
+    
+    # 2. 获取 NASDAQ 100
+    nasdaq100_tickers = get_nasdaq100_tickers()
+    all_tickers.extend(nasdaq100_tickers)
+    logger.info(f"NASDAQ 100: {len(nasdaq100_tickers)} 只股票")
+    
+    # 3. 添加 Russell 1000 额外股票（不在 S&P 500 和 NASDAQ 100 中的）
+    russell_additional = [
+        # 成长型科技股
+        'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST',
+        'LCID', 'RIVN', 'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ',
+        'SHOP', 'ZM', 'DOCU', 'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN',
+        'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB', 'VRNS', 'CRWD', 'ZS',
+        'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DASH', 'UBER',
+        'LYFT', 'ABNB', 'ETSY', 'W', 'TGT', 'LOW', 'LULU',
+        # 生物科技
+        'MRNA', 'BNTX', 'BIIB', 'VRTX', 'ILMN', 'ALNY', 'ARWR', 'FOLD',
+        'IONS', 'SGMO', 'BEAM', 'CRSP', 'NTLA', 'EDIT',
+        # 金融科技
+        'LC', 'NU', 'PAGS', 'FOUR', 'FISV', 'FIS',
+        # 其他中大型股票
+        'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO',
+        # 更多 Russell 1000 股票
+        'DDOG', 'CTSH', 'WDAY', 'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST',
+        'APH', 'NXPI', 'FTNT', 'KLAC', 'CDNS', 'SNPS', 'ZTS', 'ADP',
+        'REGN', 'CME', 'CI', 'SYK', 'ISRG', 'AMT', 'GILD', 'TJX',
+        'ADI', 'BKNG', 'LMT', 'DE', 'VZ', 'T', 'TMUS',
+        'SBUX', 'AXP', 'GS', 'BLK', 'IBM', 'UPS', 'CAT',
+        'HON', 'QCOM', 'AMGN', 'RTX', 'TXN', 'LIN', 'PM',
+        'MCD', 'NKE', 'ADBE', 'ACN', 'NFLX', 'DIS', 'ABT',
+        'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT',
+        'MRK', 'HD', 'ABBV', 'V', 'PG', 'MA', 'CVX',
+        'UNH', 'XOM', 'JNJ', 'JPM', 'BRK-B'
+    ]
+    all_tickers.extend(russell_additional)
+    
+    # 去重并排序
+    unique_tickers = sorted(list(set(all_tickers)))
+    
+    # 过滤掉无效的股票代码
+    valid_tickers = [t for t in unique_tickers if t and len(t) <= 5 and t.replace('-', '').isalnum()]
+    
+    logger.info(f"整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
+    
+    # 返回至少 100 只股票（如果不够则使用备用列表补充）
+    if len(valid_tickers) < 100:
+        logger.warning(f"股票数量不足 100 只（{len(valid_tickers)}），使用备用列表补充")
+        backup = [
             'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B',
             'UNH', 'XOM', 'JNJ', 'JPM', 'V', 'PG', 'MA', 'CVX', 'HD', 'ABBV',
             'MRK', 'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'DIS', 'ABT',
@@ -50,12 +124,13 @@ def get_sp500_tickers() -> List[str]:
             'IDXX', 'MCHP', 'DXCM', 'ODFL', 'CTSH', 'WDAY', 'TEAM', 'DDOG',
             'CRWD', 'ZS', 'NET', 'DOCN', 'ESTC', 'OKTA', 'NOW', 'SPLK', 'VEEV',
             'ZM', 'DOCU', 'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD',
-            'ESTC', 'QLYS', 'TENB', 'VRNS', 'QLYS', 'QLYS', 'QLYS', 'QLYS'
+            'ESTC', 'QLYS', 'TENB', 'VRNS', 'SNOW', 'PLTR', 'RBLX', 'COIN',
+            'HOOD', 'SOFI', 'AFRM', 'UPST', 'LCID', 'RIVN', 'F', 'GM', 'NIO'
         ]
-        
-        # 扩展列表（添加更多 S&P 500 股票）
-        # 注意：这是一个简化的示例，实际应该获取完整列表
-        return backup_tickers[:200]  # 限制为前200只，避免请求过多
+        all_backup = list(set(valid_tickers + backup))
+        valid_tickers = sorted(all_backup)[:300]
+    
+    return valid_tickers[:300]  # 限制为 300 只，确保性能
 
 
 def calculate_market_wide_rs_ranking(
@@ -93,8 +168,8 @@ def calculate_market_wide_rs_ranking(
         market_benchmark = market_benchmark.set_index('Date')
     market_price_series = market_benchmark['Close']
     
-    # 2. 获取 S&P 500 股票的加权 RS 分数（用于建立分布）
-    logger.info(f"计算 {len(market_tickers)} 只市场股票的加权 RS 分数...")
+    # 2. 获取市场股票的加权 RS 分数（用于建立分布）
+    logger.info(f"计算 {len(market_tickers)} 只市场股票的加权 RS 分数（S&P 500 + NASDAQ 100 + Russell 1000）...")
     market_rs_scores = {}
     
     for ticker in market_tickers:
