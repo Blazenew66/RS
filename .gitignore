@@ -31,6 +31,10 @@ output/
 *.csv
 *.log
 
+# 缓存文件
+.cache/
+*.pkl
+
 # IDE
 .vscode/
 .idea/

@@ -81,11 +81,12 @@ class RSCalculator:
         """
         计算加权相对强度（相对于市场基准）
         
-        公式：加权 RS = Σ((股票收益率_i - 市场收益率_i) × 权重_i)
+        公式：加权 RS = Σ((股票收益率_i / 市场收益率_i) × 权重_i)
+        使用比率而不是差值，确保在牛市和熊市都能正确反映相对强度
         
         Args:
-            stock_returns: Dict[周期天数, 股票收益率]
-            market_returns: Dict[周期天数, 市场收益率]
+            stock_returns: Dict[周期天数, 股票收益率（百分比）]
+            market_returns: Dict[周期天数, 市场收益率（百分比）]
             
         Returns:
             加权 RS 值，如果计算失败返回 None
@@ -101,8 +102,31 @@ class RSCalculator:
             market_return = market_returns.get(period)
             
             if stock_return is not None and market_return is not None:
-                # 计算相对强度：股票表现 - 市场表现
-                relative_strength = stock_return - market_return
+                # 计算相对强度比率：股票表现 / 市场表现
+                # 处理市场收益率为0或接近0的边缘情况
+                if abs(market_return) < 0.001:  # 市场收益率接近0（更严格：0.1%）
+                    # 如果市场几乎没变化（<0.1%），使用差值作为后备
+                    relative_strength = stock_return - market_return
+                else:
+                    # 使用比率：转换为倍数关系
+                    # 例如：股票涨50%，市场涨10% => 50/10 = 5.0倍
+                    # 为了保持数值范围合理，我们使用对数比率或标准化比率
+                    # 方法1：直接比率（可能数值过大）
+                    # relative_strength = stock_return / market_return
+                    
+                    # 方法2：使用相对表现比率（更稳定）
+                    # 将百分比转换为倍数：(1 + stock_return/100) / (1 + market_return/100)
+                    stock_multiple = 1 + stock_return / 100.0
+                    market_multiple = 1 + market_return / 100.0
+                    
+                    if market_multiple > 0:
+                        relative_strength_ratio = stock_multiple / market_multiple
+                        # 转换回百分比形式，使其与差值法在数值范围上可比
+                        relative_strength = (relative_strength_ratio - 1) * 100
+                    else:
+                        # 市场下跌超过100%（极端情况），使用差值
+                        relative_strength = stock_return - market_return
+                
                 weighted_rs += relative_strength * weight
                 total_weight += weight
         
@@ -119,7 +143,7 @@ class RSCalculator:
         self,
         stock_price_series: pd.Series,
         market_price_series: pd.Series
-    ) -> Optional[Tuple[float, float]]:
+    ) -> Optional[Tuple[float, pd.Series]]:
         """
         计算单只股票的 IBD 风格 RS 原始值和 RS Line
         
@@ -128,8 +152,8 @@ class RSCalculator:
             market_price_series: 市场基准（SPY）收盘价序列
             
         Returns:
-            (加权 RS 值, RS Line 当前值) 元组，如果计算失败返回 None
-            RS Line = 当前股价 / 当前市场基准价格
+            (加权 RS 值, RS Line 时间序列) 元组，如果计算失败返回 None
+            RS Line = 股票价格序列 / 市场基准价格序列（完整时间序列）
         """
         if stock_price_series is None or market_price_series is None:
             return None
@@ -148,10 +172,6 @@ class RSCalculator:
             stock_prices = stock_prices.loc[common_dates].sort_index()
             market_prices = market_prices.loc[common_dates].sort_index()
             
-            # 使用 Adjusted Close（如果存在）
-            if 'Adj Close' in stock_price_series.index.names or hasattr(stock_prices, 'name'):
-                # 如果已经是 Series，检查是否有 Adj Close
-                pass
             # 注意：这里假设传入的已经是正确的价格序列（Adj Close 或 Close）
             
             # 计算各周期的股票收益率
@@ -173,20 +193,24 @@ class RSCalculator:
             if weighted_rs is None:
                 return None
             
-            # 计算 RS Line（当前股价 / 当前市场基准价格）
-            current_stock_price = stock_prices.iloc[-1]
-            current_market_price = market_prices.iloc[-1]
+            # 计算 RS Line（完整时间序列：股票价格 / 市场基准价格）
+            # 确保没有0值或NaN
+            valid_mask = (stock_prices > 0) & (market_prices > 0) & \
+                        stock_prices.notna() & market_prices.notna()
             
-            if pd.isna(current_stock_price) or pd.isna(current_market_price):
+            if valid_mask.sum() == 0:
+                logger.warning("没有有效的价格数据用于计算 RS Line")
                 return None
             
-            if current_market_price <= 0:
-                logger.warning(f"市场基准价格为 0 或负数: {current_market_price}")
+            # 计算 RS Line 时间序列
+            rs_line_series = stock_prices / market_prices
+            rs_line_series = rs_line_series[valid_mask]  # 只保留有效值
+            
+            if len(rs_line_series) == 0:
+                logger.warning("RS Line 序列为空")
                 return None
             
-            rs_line = current_stock_price / current_market_price
-            
-            return (weighted_rs, rs_line)
+            return (weighted_rs, rs_line_series)
             
         except Exception as e:
             logger.error(f"计算 RS 失败: {str(e)}")

@@ -97,13 +97,19 @@ class Reporter:
         print("-" * 80)
         
         for _, row in top_df.iterrows():
-            rs_line = row.get('rs_line', 0)  # 兼容没有rs_line的情况
+            # rs_line 现在是 Series，获取当前值（最后一个值）
+            rs_line_value = row.get('rs_line', 0)
+            if isinstance(rs_line_value, pd.Series) and len(rs_line_value) > 0:
+                rs_line_current = rs_line_value.iloc[-1]  # 获取当前值
+            else:
+                rs_line_current = rs_line_value if rs_line_value != 0 else 0.0  # 兼容旧格式
+            
             print(
                 f"{row['rank']:<6} "
                 f"{row['ticker']:<10} "
                 f"{row['rs_score']:<10} "
                 f"{row['rs_raw']:<15.2f} "
-                f"{rs_line:<15.4f}"
+                f"{rs_line_current:<15.4f}"
             )
         
         # 显示 Bottom N（可选）
@@ -116,13 +122,19 @@ class Reporter:
         print("-" * 80)
         
         for _, row in bottom_df.iterrows():
-            rs_line = row.get('rs_line', 0)  # 兼容没有rs_line的情况
+            # rs_line 现在是 Series，获取当前值（最后一个值）
+            rs_line_value = row.get('rs_line', 0)
+            if isinstance(rs_line_value, pd.Series) and len(rs_line_value) > 0:
+                rs_line_current = rs_line_value.iloc[-1]  # 获取当前值
+            else:
+                rs_line_current = rs_line_value if rs_line_value != 0 else 0.0  # 兼容旧格式
+            
             print(
                 f"{row['rank']:<6} "
                 f"{row['ticker']:<10} "
                 f"{row['rs_score']:<10} "
                 f"{row['rs_raw']:<15.2f} "
-                f"{rs_line:<15.4f}"
+                f"{rs_line_current:<15.4f}"
             )
         
         print("\n" + "=" * 80)

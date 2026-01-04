@@ -159,63 +159,74 @@ def calculate_volume_surge(price_data: pd.DataFrame) -> Optional[float]:
 
 
 def check_rs_line_52w_high(
-    stock_price_data: pd.DataFrame,
-    market_price_data: pd.DataFrame
+    stock_price_data: pd.DataFrame = None,
+    market_price_data: pd.DataFrame = None,
+    rs_line_series: pd.Series = None
 ) -> bool:
     """
-    检查 RS Line 是否达到 52 周新高
+    检查 RS Line 是否达到 252 日（52周）新高
     
     Args:
-        stock_price_data: 股票价格数据
-        market_price_data: 市场基准价格数据
+        stock_price_data: 股票价格数据（如果 rs_line_series 为 None 则必需）
+        market_price_data: 市场基准价格数据（如果 rs_line_series 为 None 则必需）
+        rs_line_series: RS Line 时间序列（如果提供则直接使用，避免重复计算）
         
     Returns:
-        True 如果 RS Line 当前处于 52 周新高，否则 False
+        True 如果 RS Line 当前处于 252 日新高，否则 False
     """
     try:
-        # 对齐日期
-        if 'Date' in stock_price_data.columns:
-            stock_price_data = stock_price_data.set_index('Date')
-        if 'Date' in market_price_data.columns:
-            market_price_data = market_price_data.set_index('Date')
+        # 如果提供了 rs_line_series，直接使用
+        if rs_line_series is not None and len(rs_line_series) > 0:
+            rs_line = rs_line_series.sort_index()
+        else:
+            # 否则从价格数据计算
+            if stock_price_data is None or market_price_data is None:
+                return False
+            
+            # 对齐日期
+            if 'Date' in stock_price_data.columns:
+                stock_price_data = stock_price_data.set_index('Date')
+            if 'Date' in market_price_data.columns:
+                market_price_data = market_price_data.set_index('Date')
+            
+            # 使用 Adjusted Close
+            stock_col = 'Adj Close' if 'Adj Close' in stock_price_data.columns else 'Close'
+            market_col = 'Adj Close' if 'Adj Close' in market_price_data.columns else 'Close'
+            
+            stock_prices = stock_price_data[stock_col].dropna()
+            market_prices = market_price_data[market_col].dropna()
+            
+            # 对齐日期
+            common_dates = stock_prices.index.intersection(market_prices.index)
+            if len(common_dates) < 252:  # 需要至少252个交易日（52周）
+                return False
+            
+            stock_prices = stock_prices.loc[common_dates].sort_index()
+            market_prices = market_prices.loc[common_dates].sort_index()
+            
+            # 计算 RS Line
+            rs_line = stock_prices / market_prices
         
-        # 使用 Adjusted Close
-        stock_col = 'Adj Close' if 'Adj Close' in stock_price_data.columns else 'Close'
-        market_col = 'Adj Close' if 'Adj Close' in market_price_data.columns else 'Close'
+        # 获取最近252个交易日的数据
+        rs_line_252d = rs_line.tail(252)
         
-        stock_prices = stock_price_data[stock_col].dropna()
-        market_prices = market_price_data[market_col].dropna()
-        
-        # 对齐日期
-        common_dates = stock_prices.index.intersection(market_prices.index)
-        if len(common_dates) < 252:  # 需要至少52周数据
-            return False
-        
-        stock_prices = stock_prices.loc[common_dates].sort_index()
-        market_prices = market_prices.loc[common_dates].sort_index()
-        
-        # 计算 RS Line
-        rs_line = stock_prices / market_prices
-        
-        # 获取最近52周的数据
-        rs_line_52w = rs_line.tail(252)
-        
-        if len(rs_line_52w) == 0:
+        if len(rs_line_252d) == 0:
             return False
         
         # 当前 RS Line 值
-        current_rs = rs_line_52w.iloc[-1]
+        current_rs = rs_line_252d.iloc[-1]
         
-        # 52周最高值（不包括当前值）
-        max_rs_52w = rs_line_52w.iloc[:-1].max()
+        # 252日最高值（不包括当前值）
+        max_rs_252d = rs_line_252d.iloc[:-1].max()
         
-        # 如果当前值 >= 52周最高值，说明达到新高
-        is_new_high = current_rs >= max_rs_52w
+        # 严格的新高检测：当前值必须严格大于历史最高值才算新高
+        # 如果当前值等于历史最高值，说明是"等于历史高点"而不是"突破新高"
+        is_new_high = current_rs > max_rs_252d
         
         return is_new_high
         
     except Exception as e:
-        logger.debug(f"检查 RS Line 52周新高失败: {e}")
+        logger.debug(f"检查 RS Line 252日新高失败: {e}")
         return False
 
 
