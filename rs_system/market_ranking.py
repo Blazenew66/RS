@@ -85,8 +85,9 @@ def get_russell1000_static_list() -> List[str]:
         'ALLO', 'DASH', 'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI',
         'MTCH', 'IAC', 'EXPE', 'BKNG', 'TRIP', 'ABNB', 'MAR', 'HLT', 'H', 'WH',
         'LVS', 'WYNN', 'MGM', 'CZR', 'PENN', 'DKNG', 'GENI', 'FLUT', 'GMBL', 'BMBL',
-        # 更多 Russell 1000 股票
+        # 更多 Russell 1000 股票（半导体）
         'AMD', 'INTC', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC', 'NXPI', 'SWKS', 'QRVO',
+        'MU',  # Micron Technology - 重要半导体股票
         'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS',
         'DDOG', 'CTSH', 'WDAY', 'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST', 'APH', 'NXPI',
         'FTNT', 'KLAC', 'CDNS', 'SNPS', 'ZTS', 'ADP', 'REGN', 'CME', 'CI', 'SYK',
@@ -186,7 +187,7 @@ def get_combined_index_tickers() -> List[str]:
     如果在线获取失败，使用完整的 Russell 1000 静态列表作为后备
     
     Returns:
-        整合后的股票代码列表（去重，至少 800-1000 只）
+        整合后的股票代码列表（去重，至少 800 只，最多 1000 只）
     """
     all_tickers = []
     
@@ -220,22 +221,24 @@ def get_combined_index_tickers() -> List[str]:
     
     logger.info(f"整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
     
-    # 确保至少有 100 只股票（最少要求）
-    min_tickers = 100
-    max_tickers = 500  # 最多使用 500 只，确保性能
+    # 确保至少有 800 只股票（最少要求，即使抓取失败也有800+只）
+    min_tickers = 800
+    max_tickers = 1000  # 最多使用 1000 只，确保有足够的市场覆盖
     
     if len(valid_tickers) < min_tickers:
         logger.warning(f"股票数量不足 {min_tickers} 只（{len(valid_tickers)}），使用静态列表补充")
         russell_static = get_russell1000_static_list()
         all_combined = list(set(valid_tickers + russell_static))
         valid_tickers = sorted(all_combined)
+        logger.info(f"补充后共 {len(valid_tickers)} 只股票")
     
-    # 动态限制：最少100只，最多500只（确保性能）
+    # 动态限制：最少800只，最多1000只（确保有足够的市场覆盖）
     if len(valid_tickers) < min_tickers:
         logger.error(f"❌ 无法获取足够的股票（当前: {len(valid_tickers)}，最少需要: {min_tickers}）")
         # 即使不足也返回，让调用者决定如何处理
+        final_tickers = valid_tickers
     elif len(valid_tickers) > max_tickers:
-        logger.info(f"股票数量超过 {max_tickers} 只，限制为前 {max_tickers} 只以确保性能")
+        logger.info(f"股票数量超过 {max_tickers} 只（{len(valid_tickers)}），限制为前 {max_tickers} 只以确保性能")
         final_tickers = valid_tickers[:max_tickers]
     else:
         final_tickers = valid_tickers
