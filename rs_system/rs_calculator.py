@@ -235,9 +235,10 @@ class RSCalculator:
         
         logger.info(f"开始计算 {len(ticker_data)} 只股票的 IBD RS 值...")
         
-        # 准备市场基准数据
-        if 'Close' not in market_data.columns:
-            logger.error("市场基准数据缺少 Close 列")
+        # 准备市场基准数据（优先使用 Adjusted Close）
+        market_price_col = 'Adj Close' if 'Adj Close' in market_data.columns else 'Close'
+        if market_price_col not in market_data.columns:
+            logger.error(f"市场基准数据缺少 {market_price_col} 列")
             return rs_results
         
         # 使用 Date 作为索引（如果存在）
@@ -246,19 +247,21 @@ class RSCalculator:
         else:
             market_df = market_data.copy()
         
-        market_price_series = market_df['Close']
+        market_price_series = market_df[market_price_col]
         
         # 计算每只股票的 RS
         for ticker, df in ticker_data.items():
-            if 'Close' not in df.columns:
-                logger.warning(f"{ticker}: 缺少 Close 列，跳过")
+            # 优先使用 Adjusted Close
+            stock_price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
+            if stock_price_col not in df.columns:
+                logger.warning(f"{ticker}: 缺少 {stock_price_col} 列，跳过")
                 continue
             
             # 使用 Date 作为索引（如果存在）
             if 'Date' in df.columns:
                 df = df.set_index('Date')
             
-            stock_price_series = df['Close']
+            stock_price_series = df[stock_price_col]
             
             result = self.calculate_rs_raw(stock_price_series, market_price_series)
             

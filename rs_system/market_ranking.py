@@ -187,7 +187,7 @@ def get_combined_index_tickers() -> List[str]:
     如果在线获取失败，使用完整的 Russell 1000 静态列表作为后备
     
     Returns:
-        整合后的股票代码列表（去重，至少 800 只，最多 1000 只）
+        整合后的股票代码列表（去重，至少 1000 只，最多 1500 只）
     """
     all_tickers = []
     
@@ -207,11 +207,11 @@ def get_combined_index_tickers() -> List[str]:
     else:
         logger.warning("NASDAQ 100 获取失败，将使用静态列表")
     
-    # 3. 如果在线获取的股票数量不足 800 只，使用完整的 Russell 1000 静态列表
-    if len(set(all_tickers)) < 800:
-        logger.info("在线获取的股票数量不足，使用完整的 Russell 1000 静态列表作为后备")
-        russell_static = get_russell1000_static_list()
-        all_tickers.extend(russell_static)
+    # 3. 始终使用完整的 Russell 1000 静态列表作为补充（确保覆盖完整）
+    # 即使在线获取成功，也添加静态列表以确保覆盖 Russell 1000 的所有股票
+    logger.info("添加 Russell 1000 静态列表以确保完整覆盖")
+    russell_static = get_russell1000_static_list()
+    all_tickers.extend(russell_static)
     
     # 去重并排序
     unique_tickers = sorted(list(set(all_tickers)))
@@ -221,10 +221,11 @@ def get_combined_index_tickers() -> List[str]:
     
     logger.info(f"整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
     
-    # 确保至少有 800 只股票（最少要求，即使抓取失败也有800+只）
-    min_tickers = 800
-    max_tickers = 1000  # 最多使用 1000 只，确保有足够的市场覆盖
+    # 确保至少有 1000 只股票（最少要求，即使抓取失败也有1000+只）
+    min_tickers = 1000
+    max_tickers = 1500  # 最多使用 1500 只，确保有足够的市场覆盖
     
+    # 如果在线获取失败或数量不足，始终使用静态列表补充
     if len(valid_tickers) < min_tickers:
         logger.warning(f"股票数量不足 {min_tickers} 只（{len(valid_tickers)}），使用静态列表补充")
         russell_static = get_russell1000_static_list()
@@ -232,10 +233,10 @@ def get_combined_index_tickers() -> List[str]:
         valid_tickers = sorted(all_combined)
         logger.info(f"补充后共 {len(valid_tickers)} 只股票")
     
-    # 动态限制：最少800只，最多1000只（确保有足够的市场覆盖）
+    # 如果仍然不足，尝试再次补充（确保至少有1000只）
     if len(valid_tickers) < min_tickers:
-        logger.error(f"❌ 无法获取足够的股票（当前: {len(valid_tickers)}，最少需要: {min_tickers}）")
-        # 即使不足也返回，让调用者决定如何处理
+        logger.warning(f"⚠️ 股票数量仍然不足 {min_tickers} 只（{len(valid_tickers)}），静态列表可能需要扩展")
+        # 即使不足也返回，但记录警告
         final_tickers = valid_tickers
     elif len(valid_tickers) > max_tickers:
         logger.info(f"股票数量超过 {max_tickers} 只（{len(valid_tickers)}），限制为前 {max_tickers} 只以确保性能")
@@ -243,7 +244,7 @@ def get_combined_index_tickers() -> List[str]:
     else:
         final_tickers = valid_tickers
     
-    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（范围: {min_tickers}-{max_tickers}）")
+    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（目标: 至少 {min_tickers} 只）")
     
     return final_tickers
 

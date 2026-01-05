@@ -22,7 +22,10 @@ from rs_system.indicators import (
     calculate_rs_trend, 
     calculate_volume_surge,
     check_rs_line_52w_high,
-    is_leader_stock
+    is_leader_stock,
+    calculate_trend_strength_score,
+    calculate_volatility_contraction,
+    is_stage2_trend
 )
 from rs_system.rs_history import calculate_rs_1w_ago
 from rs_system.data_fetcher import DataFetcher
@@ -196,6 +199,11 @@ with st.sidebar:
         value=False,
         help="筛选条件：\n• Price > 50-day SMA\n• 50-day SMA > 200-day SMA\n• RS Rating > 80"
     )
+    show_only_stage2 = st.checkbox(
+        "仅显示第二阶段趋势",
+        value=False,
+        help="筛选条件：\n• Price > SMA50 > SMA150 > SMA200"
+    )
     
     st.markdown("---")
     
@@ -221,9 +229,9 @@ with st.sidebar:
 
 # 主内容区
 if run_button:
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
     try:
         with st.spinner("正在计算市场范围 RS 排名..."):
             # 步骤1: 获取整合指数列表（S&P 500 + NASDAQ 100 + Russell 1000）
@@ -236,8 +244,16 @@ if run_button:
                 st.stop()
             
             # 步骤2: 计算市场范围排名（直接使用市场股票列表作为分析目标）
-            status_text.text(f"📊 计算市场范围排名（分析 {len(market_tickers)} 只市场股票）...")
+            status_text.text(f"📊 计算市场范围排名（分析 {len(market_tickers)} 只市场股票，使用缓存加速）...")
             progress_bar.progress(30)
+            
+            # 创建进度回调函数（用于在计算过程中更新进度）
+            def update_progress_callback(current, total, stage=""):
+                if total > 0:
+                    progress = 30 + int((current / total) * 15)  # 30-45% 用于市场RS计算
+                    progress_bar.progress(progress)
+                    if stage:
+                        status_text.text(f"📊 {stage} ({current}/{total})")
             
             result = calculate_market_wide_rs_ranking(
                 user_tickers=market_tickers,  # 直接使用市场股票列表作为分析目标
@@ -257,14 +273,22 @@ if run_button:
                 st.stop()
             
             # 步骤3: 计算额外指标
-            status_text.text("🔧 计算技术指标（SMA50、RS Trend、Volume、RS Line 52W High、RS 1W Change）...")
+            status_text.text("🔧 计算技术指标（SMA50、RS Trend、Volume、RS Line 52W High、RS 1W Change、趋势强度、波动率收缩）...")
             progress_bar.progress(50)
             
             fetcher = DataFetcher()
             market_benchmark = fetcher.fetch_single_ticker(MARKET_BENCHMARK)
             
             indicators_data = []
+            total_stocks = len(rankings_df)
+            
             for idx, row in rankings_df.iterrows():
+                # 更新进度
+                if (idx + 1) % 50 == 0:
+                    progress = 50 + int((idx + 1) / total_stocks * 40)
+                    progress_bar.progress(progress)
+                    status_text.text(f"🔧 计算技术指标... ({idx + 1}/{total_stocks})")
+                
                 ticker = row['ticker']
                 price_data = row.get('price_data')
                 rs_score = row['rs_score']
@@ -293,6 +317,11 @@ if run_button:
                 volume_surge = calculate_volume_surge(price_data)
                 is_leader = is_leader_stock(price_data, rs_score)
                 
+                # 新增指标
+                trend_strength = calculate_trend_strength_score(price_data)
+                volatility_contraction = calculate_volatility_contraction(price_data, days=10)
+                is_stage2 = is_stage2_trend(price_data)
+                
                 # 计算1周前 RS Rating
                 rs_1w_ago = None
                 if market_benchmark is not None and len(market_rs_distribution) > 0:
@@ -310,6 +339,9 @@ if run_button:
                     'volume_surge': volume_surge,
                     'rs_line_52w_high': rs_line_52w_high,
                     'is_leader': is_leader,
+                    'is_stage2': is_stage2,
+                    'trend_strength': trend_strength,
+                    'volatility_contraction': volatility_contraction,
                     'rs_1w_ago': rs_1w_ago,
                     'price_data': price_data
                 })
@@ -319,7 +351,8 @@ if run_button:
             if not indicators_df.empty:
                 rankings_df = rankings_df.merge(
                     indicators_df[['ticker', 'sma50_dist', 'rs_trend_arrow', 'volume_surge', 
-                                  'rs_line_52w_high', 'is_leader', 'rs_1w_ago']],
+                                  'rs_line_52w_high', 'is_leader', 'is_stage2', 
+                                  'trend_strength', 'volatility_contraction', 'rs_1w_ago']],
                     on='ticker',
                     how='left'
                 )
@@ -332,8 +365,14 @@ if run_button:
                 if rankings_df.empty:
                     st.warning("⚠️ 没有股票符合领导者条件")
                     st.stop()
+            
+            if show_only_stage2:
+                rankings_df = rankings_df[rankings_df['is_stage2'] == True].copy()
+                if rankings_df.empty:
+                    st.warning("⚠️ 没有股票符合第二阶段趋势条件")
+                    st.stop()
         
-        # with st.spinner 块结束，开始显示结果
+            # with st.spinner 块结束，开始显示结果
             progress_bar.progress(100)
             status_text.text("✅ 计算完成！")
             time.sleep(0.5)
@@ -341,32 +380,32 @@ if run_button:
             progress_bar.empty()
             status_text.empty()
 
-        # 成功提示
-        st.success(f"✅ 成功分析 {len(rankings_df)} 只市场基准股票（S&P 500 + NASDAQ 100 + Russell 1000）")
+            # 成功提示
+            st.success(f"✅ 成功分析 {len(rankings_df)} 只市场基准股票（S&P 500 + NASDAQ 100 + Russell 1000）")
+            
+            # 统计信息卡片（美化）
+            st.markdown("---")
+            st.markdown("### 📊 市场概览")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+                with col1:
+                st.metric("总股票数", len(rankings_df), delta=None)
+                with col2:
+                st.metric("最高 RS", f"{rankings_df['rs_score'].max():.0f}", delta=None)
+                with col3:
+                st.metric("平均 RS", f"{rankings_df['rs_score'].mean():.1f}", delta=None)
+                with col4:
+                rs_80_plus = len(rankings_df[rankings_df['rs_score'] >= 80])
+                st.metric("RS 80+", rs_80_plus, delta=None)
+            with col5:
+                leaders_count = len(rankings_df[rankings_df.get('is_leader', False) == True])
+                st.metric("领导者", leaders_count, delta=None)
+            
+            # 准备显示数据
+            display_df = rankings_df.copy()
         
-        # 统计信息卡片（美化）
-        st.markdown("---")
-        st.markdown("### 📊 市场概览")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            st.metric("总股票数", len(rankings_df), delta=None)
-        with col2:
-            st.metric("最高 RS", f"{rankings_df['rs_score'].max():.0f}", delta=None)
-        with col3:
-            st.metric("平均 RS", f"{rankings_df['rs_score'].mean():.1f}", delta=None)
-        with col4:
-            rs_80_plus = len(rankings_df[rankings_df['rs_score'] >= 80])
-            st.metric("RS 80+", rs_80_plus, delta=None)
-        with col5:
-            leaders_count = len(rankings_df[rankings_df.get('is_leader', False) == True])
-            st.metric("领导者", leaders_count, delta=None)
-        
-        # 准备显示数据
-        display_df = rankings_df.copy()
-        
-        # RS Rating 显示（带颜色和252日新高标记🔥）
-        def format_rs_rating(score, is_52w_high):
+            # RS Rating 显示（带颜色和252日新高标记🔥）
+            def format_rs_rating(score, is_52w_high):
             if score >= 80:
                 color_class = "rs-high"
                 emoji = "🟢"
@@ -381,15 +420,15 @@ if run_button:
             high_mark = " 🔥" if is_52w_high else ""
             return f"{emoji} {score:.0f}{high_mark}"
         
-        display_df['rs_rating_display'] = display_df.apply(
-            lambda row: format_rs_rating(
-                row['rs_score'], 
-                row.get('rs_line_52w_high', False)
-            ), axis=1
-        )
-        
-        # RS 1周变化
-        def format_rs_1w_change(rs_current, rs_1w_ago):
+            display_df['rs_rating_display'] = display_df.apply(
+                lambda row: format_rs_rating(
+                    row['rs_score'], 
+                    row.get('rs_line_52w_high', False)
+                ), axis=1
+            )
+            
+            # RS 1周变化
+            def format_rs_1w_change(rs_current, rs_1w_ago):
             if pd.isna(rs_1w_ago) or rs_1w_ago is None:
                 return "N/A"
             change = rs_current - rs_1w_ago
@@ -399,54 +438,82 @@ if run_button:
                 return f"⬇️ {change:.0f}"
             else:
                 return "→ 0"
-        
-        display_df['rs_1w_change'] = display_df.apply(
-            lambda row: format_rs_1w_change(
-                row['rs_score'],
-                row.get('rs_1w_ago')
-            ), axis=1
-        )
-        
-        # 格式化其他列
-        display_df['sma50_display'] = display_df['sma50_dist'].apply(
-            lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A"
-        )
-        display_df['rs_trend_display'] = display_df['rs_trend_arrow'].fillna("→")
-        display_df['volume_display'] = display_df['volume_surge'].apply(
-            lambda x: f"{x:.2f}x" if pd.notna(x) else "N/A"
-        )
-        
-        # 按 RS Rating 降序排列
-        display_df = display_df.sort_values('rs_score', ascending=False).reset_index(drop=True)
-        
-        # 显示数据表格
-        st.markdown("---")
-        st.markdown("### 📈 RS 排名表格（按 RS Rating 降序排列）")
-        
-        # 表格列
-        table_cols = ['ticker', 'rs_rating_display', 'rs_1w_change', 'sma50_display', 
-                     'rs_trend_display', 'volume_display']
-        table_cols = [col for col in table_cols if col in display_df.columns]
-        
-        st_df = display_df[table_cols].copy()
-        st_df.columns = ['股票代码', 'RS Rating', 'RS 1W Change', 'Price vs SMA50', 
-                        'RS Trend', 'Volume Surge']
-        
-        # 使用 st.dataframe 显示（带样式）
-        st.dataframe(
-            st_df,
-            use_container_width=True,
-            hide_index=True,
-            height=400
-        )
-        
-        # 说明：252日新高标记
-        if display_df['rs_line_52w_high'].any():
-            st.info("🔥 标记表示 RS Line 达到 252 日高点（创新高）")
-        
-        # 股票图表选择
-        st.markdown("---")
-        st.markdown("### 📊 股票图表分析")
+            
+            display_df['rs_1w_change'] = display_df.apply(
+                lambda row: format_rs_1w_change(
+                    row['rs_score'],
+                    row.get('rs_1w_ago')
+                ), axis=1
+            )
+            
+            # 格式化其他列
+            display_df['sma50_display'] = display_df['sma50_dist'].apply(
+                lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A"
+            )
+            display_df['rs_trend_display'] = display_df['rs_trend_arrow'].fillna("→")
+            display_df['volume_display'] = display_df['volume_surge'].apply(
+                lambda x: f"{x:.2f}x" if pd.notna(x) else "N/A"
+            )
+            
+            # 格式化新指标
+            display_df['trend_strength_display'] = display_df['trend_strength'].apply(
+                lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
+            )
+            display_df['volatility_display'] = display_df['volatility_contraction'].apply(
+                lambda x: f"{x:.2f}%" if pd.notna(x) else "N/A"
+            )
+            
+            # 按 RS Rating 降序排列
+            display_df = display_df.sort_values('rs_score', ascending=False).reset_index(drop=True)
+            
+            # 显示数据表格
+            st.markdown("---")
+            st.markdown("### 📈 RS 排名表格（按 RS Rating 降序排列）")
+            
+            # 表格列（添加新列）
+            table_cols = ['ticker', 'rs_rating_display', 'rs_1w_change', 'sma50_display', 
+                         'rs_trend_display', 'volume_display', 'trend_strength_display', 'volatility_display']
+            table_cols = [col for col in table_cols if col in display_df.columns]
+            
+            st_df = display_df[table_cols].copy()
+            # 更新列名（包含新列）
+            column_mapping = {
+                'ticker': '股票代码',
+                'rs_rating_display': 'RS Rating',
+                'rs_1w_change': 'RS 1W Change',
+                'sma50_display': 'Price vs SMA50',
+                'rs_trend_display': 'RS Trend',
+                'volume_display': 'Volume Surge',
+                'trend_strength_display': '趋势强度',
+                'volatility_display': '波动率收缩'
+            }
+            st_df.columns = [column_mapping.get(col, col) for col in st_df.columns]
+            
+            # 使用 st.dataframe 显示（带样式和高亮）
+            # 创建样式函数，高亮显示RS新高行
+            def highlight_rs_high(row):
+                is_high = display_df.loc[row.name, 'rs_line_52w_high'] if row.name < len(display_df) else False
+                if is_high:
+                    return ['background-color: #E3F2FD'] * len(row)  # 浅蓝色背景
+                return [''] * len(row)
+            
+            # 应用样式
+            styled_df = st_df.style.apply(highlight_rs_high, axis=1)
+                
+                st.dataframe(
+                styled_df,
+                    use_container_width=True,
+                    hide_index=True,
+                height=400
+            )
+            
+            # 说明：252日新高标记
+            if display_df['rs_line_52w_high'].any():
+                st.info("🔥 标记表示 RS Line 达到 252 日高点（创新高）")
+            
+            # 股票图表选择
+            st.markdown("---")
+            st.markdown("### 📊 股票图表分析")
         
         col1, col2 = st.columns([1, 3])
         with col1:
@@ -598,20 +665,20 @@ if run_button:
             csv_df['rs_1w_change'] = rankings_df['rs_score'] - rankings_df['rs_1w_ago'].fillna(rankings_df['rs_score'])
         
         csv = csv_df.to_csv(index=False)
-        st.download_button(
+                st.download_button(
             label="📥 下载完整数据 (CSV)",
-            data=csv,
+                    data=csv,
             file_name=f"rs_rankings_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-            
-    except Exception as e:
-        progress_bar.empty()
-        status_text.empty()
-        st.error(f"❌ 发生错误: {str(e)}")
-        with st.expander("查看详细错误信息"):
-            st.exception(e)
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                st.error(f"❌ 发生错误: {str(e)}")
+                with st.expander("查看详细错误信息"):
+                    st.exception(e)
 
 else:
     # 初始状态 - 美化欢迎页面

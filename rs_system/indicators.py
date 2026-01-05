@@ -290,6 +290,154 @@ def calculate_sma50(price_data: pd.DataFrame) -> Optional[float]:
         return None
 
 
+def calculate_trend_strength_score(price_data: pd.DataFrame) -> Optional[float]:
+    """
+    计算趋势强度分数（SCTR风格）
+    基于：
+    1. 股价 vs SMA200 的加权平均（40%）
+    2. 6个月变化率（30%）
+    3. RSI（30%）
+    
+    Args:
+        price_data: 包含价格数据的 DataFrame
+        
+    Returns:
+        趋势强度分数（0-100），如果计算失败返回 None
+    """
+    try:
+        price_col = 'Adj Close' if 'Adj Close' in price_data.columns else 'Close'
+        if price_col not in price_data.columns:
+            return None
+        
+        prices = price_data[price_col].dropna()
+        
+        if len(prices) < 200:
+            return None
+        
+        # 1. 计算股价 vs SMA200 的百分比（40%权重）
+        sma200 = prices.rolling(window=200).mean().iloc[-1]
+        current_price = prices.iloc[-1]
+        
+        if pd.isna(sma200) or pd.isna(current_price) or sma200 == 0:
+            return None
+        
+        price_vs_sma200_pct = ((current_price - sma200) / sma200) * 100
+        # 归一化到 0-100（假设 -50% 到 +50% 的范围）
+        score1 = max(0, min(100, 50 + price_vs_sma200_pct))
+        
+        # 2. 计算6个月变化率（30%权重）
+        if len(prices) < 126:  # 6个月约126个交易日
+            return None
+        
+        price_6m_ago = prices.iloc[-126]
+        if pd.isna(price_6m_ago) or price_6m_ago == 0:
+            return None
+        
+        change_6m_pct = ((current_price - price_6m_ago) / price_6m_ago) * 100
+        # 归一化到 0-100（假设 -50% 到 +50% 的范围）
+        score2 = max(0, min(100, 50 + change_6m_pct))
+        
+        # 3. 计算RSI（30%权重）
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        
+        if len(gain) == 0 or len(loss) == 0:
+            return None
+        
+        rs = gain.iloc[-1] / loss.iloc[-1] if loss.iloc[-1] != 0 else 0
+        rsi = 100 - (100 / (1 + rs)) if not pd.isna(rs) else 50
+        score3 = rsi  # RSI 本身就在 0-100 范围内
+        
+        # 加权平均
+        trend_score = (score1 * 0.40 + score2 * 0.30 + score3 * 0.30)
+        
+        return round(trend_score, 2)
+        
+    except Exception as e:
+        logger.debug(f"计算趋势强度分数失败: {e}")
+        return None
+
+
+def calculate_volatility_contraction(price_data: pd.DataFrame, days: int = 10) -> Optional[float]:
+    """
+    计算波动率收缩：10日最高价与10日最低价之间的距离（百分比）
+    
+    Args:
+        price_data: 包含价格数据的 DataFrame
+        days: 计算天数（默认10天）
+        
+    Returns:
+        波动率收缩百分比（最高价与最低价之间的距离），如果计算失败返回 None
+    """
+    try:
+        price_col = 'Adj Close' if 'Adj Close' in price_data.columns else 'Close'
+        if price_col not in price_data.columns:
+            return None
+        
+        prices = price_data[price_col].dropna()
+        
+        if len(prices) < days:
+            return None
+        
+        # 获取最近N天的最高价和最低价
+        recent_prices = prices.tail(days)
+        high_10d = recent_prices.max()
+        low_10d = recent_prices.min()
+        
+        if pd.isna(high_10d) or pd.isna(low_10d) or low_10d == 0:
+            return None
+        
+        # 计算距离百分比
+        volatility_pct = ((high_10d - low_10d) / low_10d) * 100
+        
+        return round(volatility_pct, 2)
+        
+    except Exception as e:
+        logger.debug(f"计算波动率收缩失败: {e}")
+        return None
+
+
+def is_stage2_trend(price_data: pd.DataFrame) -> bool:
+    """
+    判断股票是否处于第二阶段趋势：
+    - Price > SMA50 > SMA150 > SMA200
+    
+    Args:
+        price_data: 包含价格数据的 DataFrame
+        
+    Returns:
+        True 如果符合第二阶段趋势，否则 False
+    """
+    try:
+        price_col = 'Adj Close' if 'Adj Close' in price_data.columns else 'Close'
+        if price_col not in price_data.columns:
+            return False
+        
+        prices = price_data[price_col].dropna()
+        
+        if len(prices) < 200:
+            return False
+        
+        # 计算移动平均线
+        sma50 = prices.rolling(window=50).mean().iloc[-1]
+        sma150 = prices.rolling(window=150).mean().iloc[-1]
+        sma200 = prices.rolling(window=200).mean().iloc[-1]
+        current_price = prices.iloc[-1]
+        
+        if pd.isna(sma50) or pd.isna(sma150) or pd.isna(sma200) or pd.isna(current_price):
+            return False
+        
+        # 检查第二阶段趋势条件
+        return (current_price > sma50 and 
+                sma50 > sma150 and 
+                sma150 > sma200)
+        
+    except Exception as e:
+        logger.debug(f"判断第二阶段趋势失败: {e}")
+        return False
+
+
 def is_leader_stock(
     price_data: pd.DataFrame,
     rs_score: float
