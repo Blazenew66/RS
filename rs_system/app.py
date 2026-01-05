@@ -489,19 +489,9 @@ if run_button:
             }
             st_df.columns = [column_mapping.get(col, col) for col in st_df.columns]
             
-            # 使用 st.dataframe 显示（带样式和高亮）
-            # 创建样式函数，高亮显示RS新高行
-            def highlight_rs_high(row):
-                is_high = display_df.loc[row.name, 'rs_line_52w_high'] if row.name < len(display_df) else False
-                if is_high:
-                    return ['background-color: #E3F2FD'] * len(row)  # 浅蓝色背景
-                return [''] * len(row)
-            
-            # 应用样式
-            styled_df = st_df.style.apply(highlight_rs_high, axis=1)
-            
+            # 使用 st.dataframe 显示表格
             st.dataframe(
-                styled_df,
+                st_df,
                 use_container_width=True,
                 hide_index=True,
                 height=400
@@ -653,8 +643,8 @@ if run_button:
                         )
                         
                         st.plotly_chart(fig, use_container_width=True)
-            
-            # 下载 CSV
+                
+                # 下载 CSV
             st.markdown("---")
             csv_df = rankings_df[['ticker', 'rs_raw', 'rs_score', 'rank']].copy()
             if 'sma50_dist' in rankings_df.columns:
