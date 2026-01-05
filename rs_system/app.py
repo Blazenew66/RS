@@ -229,9 +229,9 @@ with st.sidebar:
 
 # 主内容区
 if run_button:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     try:
         with st.spinner("正在计算市场范围 RS 排名..."):
             # 步骤1: 获取整合指数列表（S&P 500 + NASDAQ 100 + Russell 1000）
@@ -388,13 +388,13 @@ if run_button:
             st.markdown("### 📊 市场概览")
             col1, col2, col3, col4, col5 = st.columns(5)
             
-                with col1:
+            with col1:
                 st.metric("总股票数", len(rankings_df), delta=None)
-                with col2:
+            with col2:
                 st.metric("最高 RS", f"{rankings_df['rs_score'].max():.0f}", delta=None)
-                with col3:
+            with col3:
                 st.metric("平均 RS", f"{rankings_df['rs_score'].mean():.1f}", delta=None)
-                with col4:
+            with col4:
                 rs_80_plus = len(rankings_df[rankings_df['rs_score'] >= 80])
                 st.metric("RS 80+", rs_80_plus, delta=None)
             with col5:
@@ -403,22 +403,22 @@ if run_button:
             
             # 准备显示数据
             display_df = rankings_df.copy()
-        
+            
             # RS Rating 显示（带颜色和252日新高标记🔥）
             def format_rs_rating(score, is_52w_high):
-            if score >= 80:
-                color_class = "rs-high"
-                emoji = "🟢"
-            elif score >= 70:
-                color_class = "rs-medium"
-                emoji = "🟡"
-            else:
-                color_class = "rs-low"
-                emoji = "🔴"
-            
-            # 使用🔥标记252日新高
-            high_mark = " 🔥" if is_52w_high else ""
-            return f"{emoji} {score:.0f}{high_mark}"
+                if score >= 80:
+                    color_class = "rs-high"
+                    emoji = "🟢"
+                elif score >= 70:
+                    color_class = "rs-medium"
+                    emoji = "🟡"
+                else:
+                    color_class = "rs-low"
+                    emoji = "🔴"
+                
+                # 使用🔥标记252日新高
+                high_mark = " 🔥" if is_52w_high else ""
+                return f"{emoji} {score:.0f}{high_mark}"
         
             display_df['rs_rating_display'] = display_df.apply(
                 lambda row: format_rs_rating(
@@ -429,15 +429,15 @@ if run_button:
             
             # RS 1周变化
             def format_rs_1w_change(rs_current, rs_1w_ago):
-            if pd.isna(rs_1w_ago) or rs_1w_ago is None:
-                return "N/A"
-            change = rs_current - rs_1w_ago
-            if change > 0:
-                return f"⬆️ +{change:.0f}"
-            elif change < 0:
-                return f"⬇️ {change:.0f}"
-            else:
-                return "→ 0"
+                if pd.isna(rs_1w_ago) or rs_1w_ago is None:
+                    return "N/A"
+                change = rs_current - rs_1w_ago
+                if change > 0:
+                    return f"⬆️ +{change:.0f}"
+                elif change < 0:
+                    return f"⬇️ {change:.0f}"
+                else:
+                    return "→ 0"
             
             display_df['rs_1w_change'] = display_df.apply(
                 lambda row: format_rs_1w_change(
@@ -499,11 +499,11 @@ if run_button:
             
             # 应用样式
             styled_df = st_df.style.apply(highlight_rs_high, axis=1)
-                
-                st.dataframe(
+            
+            st.dataframe(
                 styled_df,
-                    use_container_width=True,
-                    hide_index=True,
+                use_container_width=True,
+                hide_index=True,
                 height=400
             )
             
@@ -514,171 +514,171 @@ if run_button:
             # 股票图表选择
             st.markdown("---")
             st.markdown("### 📊 股票图表分析")
-        
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            selected_ticker = st.selectbox(
-                "选择股票",
-                rankings_df['ticker'].tolist(),
-                index=0,
-                label_visibility="collapsed"
-            )
-        
-        # 显示选中股票的关键指标
-        if selected_ticker:
-            selected_row = rankings_df[rankings_df['ticker'] == selected_ticker].iloc[0]
-            selected_price_data = selected_row.get('price_data')
             
-            # 关键指标卡片
-            with col2:
-                metric_cols = st.columns(4)
-                with metric_cols[0]:
-                    st.metric("RS Rating", f"{selected_row['rs_score']:.0f}")
-                with metric_cols[1]:
-                    sma50_val = selected_row.get('sma50_dist', 0)
-                    st.metric("vs SMA50", f"{sma50_val:+.1f}%" if pd.notna(sma50_val) else "N/A")
-                with metric_cols[2]:
-                    volume_val = selected_row.get('volume_surge', 0)
-                    st.metric("Volume", f"{volume_val:.2f}x" if pd.notna(volume_val) else "N/A")
-                with metric_cols[3]:
-                    is_52w = selected_row.get('rs_line_52w_high', False)
-                    st.metric("52W High", "✅" if is_52w else "❌")
-            
-            # 图表
-            if selected_price_data is not None and market_benchmark is not None:
-                rs_line = None
-                stock_prices = None
-                
-                # 优先使用已计算的 rs_line_series
-                rs_line_series = selected_row.get('rs_line')
-                
-                # 类型检查：处理向后兼容（旧版本可能是单个数值）
-                if isinstance(rs_line_series, pd.Series) and len(rs_line_series) > 0:
-                    # 使用已计算的 RS Line 序列（新版本格式）
-                    rs_line = rs_line_series.sort_index()
-                    
-                    # 获取对应的股票价格用于归一化
-                    if 'Date' in selected_price_data.columns:
-                        stock_df = selected_price_data.set_index('Date')
-                    else:
-                        stock_df = selected_price_data.copy()
-                    
-                    stock_col = 'Adj Close' if 'Adj Close' in stock_df.columns else 'Close'
-                    stock_prices = stock_df[stock_col].dropna()
-                    
-                    # 对齐日期
-                    common_dates = stock_prices.index.intersection(rs_line.index)
-                    if len(common_dates) > 0:
-                        stock_prices = stock_prices.loc[common_dates].sort_index()
-                        rs_line = rs_line.loc[common_dates].sort_index()
-                    else:
-                        rs_line = None
-                elif isinstance(rs_line_series, (int, float, np.number)):
-                    # 向后兼容：如果是单个数值（旧版本数据），触发重新计算
-                    rs_line_series = None  # 触发后续的重新计算
-                    rs_line = None
-                else:
-                    # 其他情况（None、空等），触发重新计算
-                    rs_line = None
-                
-                # 如果没有 rs_line_series 或对齐失败，从价格数据计算
-                if rs_line is None or len(rs_line) == 0:
-                    if 'Date' in selected_price_data.columns:
-                        stock_df = selected_price_data.set_index('Date')
-                    else:
-                        stock_df = selected_price_data.copy()
-                    
-                    if 'Date' in market_benchmark.columns:
-                        market_df = market_benchmark.set_index('Date')
-                    else:
-                        market_df = market_benchmark.copy()
-                    
-                    stock_col = 'Adj Close' if 'Adj Close' in stock_df.columns else 'Close'
-                    market_col = 'Adj Close' if 'Adj Close' in market_df.columns else 'Close'
-                    
-                    stock_prices = stock_df[stock_col].dropna()
-                    market_prices = market_df[market_col].dropna()
-                    
-                    common_dates = stock_prices.index.intersection(market_prices.index)
-                    if len(common_dates) > 0:
-                        stock_prices = stock_prices.loc[common_dates].sort_index()
-                        market_prices = market_prices.loc[common_dates].sort_index()
-                        rs_line = stock_prices / market_prices
-                
-                if rs_line is not None and len(rs_line) > 0 and stock_prices is not None and len(stock_prices) > 0:
-                    stock_normalized = (stock_prices / stock_prices.iloc[0]) * 100
-                    rs_line_normalized = (rs_line / rs_line.iloc[0]) * 100
-                    
-                    one_year_ago = rs_line.index[-252] if len(rs_line) > 252 else rs_line.index[0]
-                    stock_normalized = stock_normalized.loc[one_year_ago:]
-                    rs_line_normalized = rs_line_normalized.loc[one_year_ago:]
-                    
-                    # 创建图表
-                    fig = make_subplots(specs=[[{"secondary_y": True}]])
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=stock_normalized.index,
-                            y=stock_normalized.values,
-                            name=f"{selected_ticker} 价格",
-                            line=dict(color='#667eea', width=2.5),
-                            fill='tozeroy',
-                            fillcolor='rgba(102, 126, 234, 0.1)'
-                        ),
-                        secondary_y=False,
-                    )
-                    
-                    fig.add_trace(
-                        go.Scatter(
-                            x=rs_line_normalized.index,
-                            y=rs_line_normalized.values,
-                            name="RS Line",
-                            line=dict(color='#ef4444', width=2, dash='dash')
-                        ),
-                        secondary_y=True,
-                    )
-                    
-                    fig.update_xaxes(title_text="日期", showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
-                    fig.update_yaxes(title_text="价格（归一化 %）", secondary_y=False, showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
-                    fig.update_yaxes(title_text="RS Line（归一化 %）", secondary_y=True, showgrid=False)
-                    
-                    fig.update_layout(
-                        title=f"{selected_ticker} - 价格与相对强度趋势分析",
-                        height=500,
-                        hovermode='x unified',
-                        template='plotly_white',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                # 下载 CSV
-        st.markdown("---")
-        csv_df = rankings_df[['ticker', 'rs_raw', 'rs_score', 'rank']].copy()
-        if 'sma50_dist' in rankings_df.columns:
-            csv_df['sma50_dist'] = rankings_df['sma50_dist']
-        if 'volume_surge' in rankings_df.columns:
-            csv_df['volume_surge'] = rankings_df['volume_surge']
-        if 'rs_1w_ago' in rankings_df.columns:
-            csv_df['rs_1w_change'] = rankings_df['rs_score'] - rankings_df['rs_1w_ago'].fillna(rankings_df['rs_score'])
-        
-        csv = csv_df.to_csv(index=False)
-                st.download_button(
-            label="📥 下载完整数据 (CSV)",
-                    data=csv,
-            file_name=f"rs_rankings_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                selected_ticker = st.selectbox(
+                    "选择股票",
+                    rankings_df['ticker'].tolist(),
+                    index=0,
+                    label_visibility="collapsed"
                 )
+            
+            # 显示选中股票的关键指标
+            if selected_ticker:
+                selected_row = rankings_df[rankings_df['ticker'] == selected_ticker].iloc[0]
+                selected_price_data = selected_row.get('price_data')
                 
-            except Exception as e:
-                progress_bar.empty()
-                status_text.empty()
-                st.error(f"❌ 发生错误: {str(e)}")
-                with st.expander("查看详细错误信息"):
-                    st.exception(e)
+                # 关键指标卡片
+                with col2:
+                    metric_cols = st.columns(4)
+                    with metric_cols[0]:
+                        st.metric("RS Rating", f"{selected_row['rs_score']:.0f}")
+                    with metric_cols[1]:
+                        sma50_val = selected_row.get('sma50_dist', 0)
+                        st.metric("vs SMA50", f"{sma50_val:+.1f}%" if pd.notna(sma50_val) else "N/A")
+                    with metric_cols[2]:
+                        volume_val = selected_row.get('volume_surge', 0)
+                        st.metric("Volume", f"{volume_val:.2f}x" if pd.notna(volume_val) else "N/A")
+                    with metric_cols[3]:
+                        is_52w = selected_row.get('rs_line_52w_high', False)
+                        st.metric("52W High", "✅" if is_52w else "❌")
+                
+                # 图表
+                if selected_price_data is not None and market_benchmark is not None:
+                    rs_line = None
+                    stock_prices = None
+                    
+                    # 优先使用已计算的 rs_line_series
+                    rs_line_series = selected_row.get('rs_line')
+                    
+                    # 类型检查：处理向后兼容（旧版本可能是单个数值）
+                    if isinstance(rs_line_series, pd.Series) and len(rs_line_series) > 0:
+                        # 使用已计算的 RS Line 序列（新版本格式）
+                        rs_line = rs_line_series.sort_index()
+                        
+                        # 获取对应的股票价格用于归一化
+                        if 'Date' in selected_price_data.columns:
+                            stock_df = selected_price_data.set_index('Date')
+                        else:
+                            stock_df = selected_price_data.copy()
+                        
+                        stock_col = 'Adj Close' if 'Adj Close' in stock_df.columns else 'Close'
+                        stock_prices = stock_df[stock_col].dropna()
+                        
+                        # 对齐日期
+                        common_dates = stock_prices.index.intersection(rs_line.index)
+                        if len(common_dates) > 0:
+                            stock_prices = stock_prices.loc[common_dates].sort_index()
+                            rs_line = rs_line.loc[common_dates].sort_index()
+                        else:
+                            rs_line = None
+                    elif isinstance(rs_line_series, (int, float, np.number)):
+                        # 向后兼容：如果是单个数值（旧版本数据），触发重新计算
+                        rs_line_series = None  # 触发后续的重新计算
+                        rs_line = None
+                    else:
+                        # 其他情况（None、空等），触发重新计算
+                        rs_line = None
+                    
+                    # 如果没有 rs_line_series 或对齐失败，从价格数据计算
+                    if rs_line is None or len(rs_line) == 0:
+                        if 'Date' in selected_price_data.columns:
+                            stock_df = selected_price_data.set_index('Date')
+                        else:
+                            stock_df = selected_price_data.copy()
+                        
+                        if 'Date' in market_benchmark.columns:
+                            market_df = market_benchmark.set_index('Date')
+                        else:
+                            market_df = market_benchmark.copy()
+                        
+                        stock_col = 'Adj Close' if 'Adj Close' in stock_df.columns else 'Close'
+                        market_col = 'Adj Close' if 'Adj Close' in market_df.columns else 'Close'
+                        
+                        stock_prices = stock_df[stock_col].dropna()
+                        market_prices = market_df[market_col].dropna()
+                        
+                        common_dates = stock_prices.index.intersection(market_prices.index)
+                        if len(common_dates) > 0:
+                            stock_prices = stock_prices.loc[common_dates].sort_index()
+                            market_prices = market_prices.loc[common_dates].sort_index()
+                            rs_line = stock_prices / market_prices
+                    
+                    if rs_line is not None and len(rs_line) > 0 and stock_prices is not None and len(stock_prices) > 0:
+                        stock_normalized = (stock_prices / stock_prices.iloc[0]) * 100
+                        rs_line_normalized = (rs_line / rs_line.iloc[0]) * 100
+                        
+                        one_year_ago = rs_line.index[-252] if len(rs_line) > 252 else rs_line.index[0]
+                        stock_normalized = stock_normalized.loc[one_year_ago:]
+                        rs_line_normalized = rs_line_normalized.loc[one_year_ago:]
+                        
+                        # 创建图表
+                        fig = make_subplots(specs=[[{"secondary_y": True}]])
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=stock_normalized.index,
+                                y=stock_normalized.values,
+                                name=f"{selected_ticker} 价格",
+                                line=dict(color='#667eea', width=2.5),
+                                fill='tozeroy',
+                                fillcolor='rgba(102, 126, 234, 0.1)'
+                            ),
+                            secondary_y=False,
+                        )
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=rs_line_normalized.index,
+                                y=rs_line_normalized.values,
+                                name="RS Line",
+                                line=dict(color='#ef4444', width=2, dash='dash')
+                            ),
+                            secondary_y=True,
+                        )
+                        
+                        fig.update_xaxes(title_text="日期", showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
+                        fig.update_yaxes(title_text="价格（归一化 %）", secondary_y=False, showgrid=True, gridwidth=1, gridcolor='rgba(128,128,128,0.2)')
+                        fig.update_yaxes(title_text="RS Line（归一化 %）", secondary_y=True, showgrid=False)
+                        
+                        fig.update_layout(
+                            title=f"{selected_ticker} - 价格与相对强度趋势分析",
+                            height=500,
+                            hovermode='x unified',
+                            template='plotly_white',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            # 下载 CSV
+            st.markdown("---")
+            csv_df = rankings_df[['ticker', 'rs_raw', 'rs_score', 'rank']].copy()
+            if 'sma50_dist' in rankings_df.columns:
+                csv_df['sma50_dist'] = rankings_df['sma50_dist']
+            if 'volume_surge' in rankings_df.columns:
+                csv_df['volume_surge'] = rankings_df['volume_surge']
+            if 'rs_1w_ago' in rankings_df.columns:
+                csv_df['rs_1w_change'] = rankings_df['rs_score'] - rankings_df['rs_1w_ago'].fillna(rankings_df['rs_score'])
+            
+            csv = csv_df.to_csv(index=False)
+            st.download_button(
+                label="📥 下载完整数据 (CSV)",
+                data=csv,
+                file_name=f"rs_rankings_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+    except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
+        st.error(f"❌ 发生错误: {str(e)}")
+        with st.expander("查看详细错误信息"):
+            st.exception(e)
 
 else:
     # 初始状态 - 美化欢迎页面

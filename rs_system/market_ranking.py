@@ -223,7 +223,6 @@ def get_combined_index_tickers() -> List[str]:
     
     # 确保至少有 1000 只股票（最少要求，即使抓取失败也有1000+只）
     min_tickers = 1000
-    max_tickers = 1500  # 最多使用 1500 只，确保有足够的市场覆盖
     
     # 如果在线获取失败或数量不足，始终使用静态列表补充
     if len(valid_tickers) < min_tickers:
@@ -233,18 +232,14 @@ def get_combined_index_tickers() -> List[str]:
         valid_tickers = sorted(all_combined)
         logger.info(f"补充后共 {len(valid_tickers)} 只股票")
     
-    # 如果仍然不足，尝试再次补充（确保至少有1000只）
+    # 如果仍然不足，记录警告但返回所有可用的股票
     if len(valid_tickers) < min_tickers:
         logger.warning(f"⚠️ 股票数量仍然不足 {min_tickers} 只（{len(valid_tickers)}），静态列表可能需要扩展")
-        # 即使不足也返回，但记录警告
-        final_tickers = valid_tickers
-    elif len(valid_tickers) > max_tickers:
-        logger.info(f"股票数量超过 {max_tickers} 只（{len(valid_tickers)}），限制为前 {max_tickers} 只以确保性能")
-        final_tickers = valid_tickers[:max_tickers]
-    else:
-        final_tickers = valid_tickers
     
-    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（目标: 至少 {min_tickers} 只）")
+    # 返回所有获取到的股票（移除任何数量限制，确保完整分析）
+    final_tickers = valid_tickers
+    
+    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（目标: 至少 {min_tickers} 只，实际: {len(final_tickers)} 只）")
     
     return final_tickers
 
