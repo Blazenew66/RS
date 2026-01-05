@@ -93,121 +93,79 @@ def get_nasdaq100_tickers() -> List[str]:
 
 def get_russell1000_static_list() -> List[str]:
     """
-    获取完整的 Russell 1000 静态股票列表（800-1000只）
-    作为后备方案，当在线获取失败时使用
+    获取 Russell 1000 静态股票列表（作为后备方案）
+    
+    优先从项目根目录读取 `tickers.csv` 文件：
+    - 路径：项目根目录 / tickers.csv
+    - 列：优先使用名为 `ticker` 的列，否则使用第一列
+    
+    如果读取失败或文件不存在，则使用一个简短的硬编码列表作为兜底，
+    仅用于保证系统可运行，而不是覆盖完整的 Russell 1000。
     """
-    # 完整的 Russell 1000 股票列表（包含 S&P 500 + NASDAQ 100 + 其他大型股票）
-    russell1000_tickers = [
-        # S&P 500 核心股票
-        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'BRK.B',
-        'UNH', 'XOM', 'JNJ', 'JPM', 'V', 'PG', 'MA', 'CVX', 'HD', 'ABBV',
-        'MRK', 'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'DIS', 'ABT', 'ACN',
-        'NFLX', 'ADBE', 'NKE', 'MCD', 'PM', 'LIN', 'TXN', 'RTX', 'HON', 'QCOM',
-        'AMGN', 'IBM', 'UPS', 'CAT', 'GS', 'AXP', 'SBUX', 'VZ', 'DE', 'LMT',
-        'BKNG', 'ADI', 'TJX', 'GILD', 'AMT', 'ISRG', 'BLK', 'SYK', 'CI', 'CME',
-        'REGN', 'ADP', 'ZTS', 'CDNS', 'SNPS', 'KLAC', 'FTNT', 'NXPI', 'APH', 'FAST',
-        'CTAS', 'PAYX', 'ANSS', 'IDXX', 'MCHP', 'DXCM', 'ODFL', 'CTSH', 'WDAY', 'TEAM',
-        'DDOG', 'CRWD', 'ZS', 'NET', 'DOCN', 'ESTC', 'OKTA', 'NOW', 'SPLK', 'VEEV',
-        'ZM', 'DOCU', 'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC',
-        'QLYS', 'TENB', 'VRNS', 'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM',
-        'UPST', 'LCID', 'RIVN', 'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ',
-        'SHOP', 'ETSY', 'W', 'TGT', 'LOW', 'LULU', 'MRNA', 'BNTX', 'BIIB', 'VRTX',
-        'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM', 'CRSP', 'NTLA', 'EDIT',
-        'LC', 'NU', 'PAGS', 'FOUR', 'FISV', 'FIS', 'ON', 'WOLF', 'ALGM', 'ALKS',
-        'ALLO', 'DASH', 'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI',
-        'MTCH', 'IAC', 'EXPE', 'BKNG', 'TRIP', 'ABNB', 'MAR', 'HLT', 'H', 'WH',
-        'LVS', 'WYNN', 'MGM', 'CZR', 'PENN', 'DKNG', 'GENI', 'FLUT', 'GMBL', 'BMBL',
-        # 更多 Russell 1000 股票（半导体）
-        'AMD', 'INTC', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC', 'NXPI', 'SWKS', 'QRVO',
-        'MU',  # Micron Technology - 重要半导体股票
-        'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS',
-        'DDOG', 'CTSH', 'WDAY', 'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST', 'APH', 'NXPI',
-        'FTNT', 'KLAC', 'CDNS', 'SNPS', 'ZTS', 'ADP', 'REGN', 'CME', 'CI', 'SYK',
-        'ISRG', 'AMT', 'GILD', 'TJX', 'ADI', 'BKNG', 'LMT', 'DE', 'VZ', 'T',
-        'TMUS', 'SBUX', 'AXP', 'GS', 'BLK', 'IBM', 'UPS', 'CAT', 'HON', 'QCOM',
-        'AMGN', 'RTX', 'TXN', 'LIN', 'PM', 'MCD', 'NKE', 'ADBE', 'ACN', 'NFLX',
-        'DIS', 'ABT', 'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'MRK', 'HD',
-        'ABBV', 'V', 'PG', 'MA', 'CVX', 'UNH', 'XOM', 'JNJ', 'JPM', 'BRK-B',
-        # 金融股
-        'BAC', 'WFC', 'C', 'MS', 'SCHW', 'COF', 'USB', 'PNC', 'TFC', 'BK',
-        'STT', 'CFG', 'HBAN', 'KEY', 'MTB', 'ZION', 'RF', 'FITB', 'CMA', 'WTFC',
-        # 能源股
-        'SLB', 'COP', 'EOG', 'MPC', 'VLO', 'PSX', 'HAL', 'BKR', 'OVV', 'FANG',
-        'CTRA', 'MRO', 'DVN', 'HES', 'APA', 'PR', 'NOV', 'FTI', 'WMB', 'OKE',
-        # 医疗股
-        'LLY', 'ABBV', 'TMO', 'DHR', 'BDX', 'SYK', 'ISRG', 'ZTS', 'REGN', 'VRTX',
-        'BIIB', 'GILD', 'AMGN', 'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM',
-        'CRSP', 'NTLA', 'EDIT', 'MRNA', 'BNTX', 'CVS', 'CI', 'HUM', 'CNC', 'MOH',
-        'ELV', 'UNH', 'CVS', 'CI', 'HUM', 'CNC', 'MOH', 'ELV', 'UNH', 'CVS',
-        # 消费股
-        'NKE', 'LULU', 'DKS', 'BBY', 'GME', 'AMC', 'ETSY', 'W', 'TGT', 'LOW',
-        'HD', 'COST', 'WMT', 'TGT', 'LOW', 'HD', 'COST', 'WMT', 'TGT', 'LOW',
-        'MCD', 'SBUX', 'YUM', 'CMG', 'DPZ', 'PZZA', 'WEN', 'JACK', 'BLMN', 'DIN',
-        # 工业股
-        'BA', 'LMT', 'RTX', 'NOC', 'GD', 'TXT', 'CAT', 'DE', 'CMI', 'PCAR',
-        'HON', 'EMR', 'ETN', 'IR', 'ROK', 'PH', 'DOV', 'ITW', 'FAST', 'CTAS',
-        # 科技股
-        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'AVGO', 'CSCO',
-        'ORCL', 'ADBE', 'CRM', 'INTC', 'AMD', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC',
-        'NXPI', 'ADI', 'MCHP', 'SWKS', 'QRVO', 'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO',
-        'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST', 'LCID', 'RIVN',
-        'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ', 'SHOP', 'ZM', 'DOCU',
-        'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB',
-        'VRNS', 'CRWD', 'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DASH',
-        'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI', 'MTCH', 'IAC',
-        # 通信股
-        'VZ', 'T', 'TMUS', 'CMCSA', 'DIS', 'NFLX', 'FOXA', 'PARA', 'WBD', 'NWS',
-        # 房地产股
-        'AMT', 'PLD', 'EQIX', 'PSA', 'WELL', 'VICI', 'SPG', 'O', 'DLR', 'EXPI',
-        # 公用事业股
-        'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'WEC', 'ES',
-        # 材料股
-        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'DOW', 'FCX', 'NEM', 'VALE', 'RIO',
-        # 更多 Russell 1000 股票（补充到 1000 只）
-        'TTWO', 'EA', 'ATVI', 'ROKU', 'TTD', 'MTCH', 'IAC', 'EXPE', 'BKNG', 'TRIP',
-        'ABNB', 'MAR', 'HLT', 'H', 'WH', 'LVS', 'WYNN', 'MGM', 'CZR', 'PENN',
-        'DKNG', 'GENI', 'FLUT', 'GMBL', 'BMBL', 'RBLX', 'U', 'RKT', 'OPEN', 'Z',
-        'COMP', 'RDFN', 'EXPI', 'REAX', 'HOUS', 'RMAX', 'LOAN', 'UWMC', 'LDI', 'HMPT',
-        'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB', 'VRNS', 'CRWD',
-        'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DDOG', 'CTSH', 'WDAY',
-        'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST', 'APH', 'NXPI', 'FTNT', 'KLAC', 'CDNS',
-        'SNPS', 'ZTS', 'ADP', 'REGN', 'CME', 'CI', 'SYK', 'ISRG', 'AMT', 'GILD',
-        'TJX', 'ADI', 'BKNG', 'LMT', 'DE', 'VZ', 'T', 'TMUS', 'SBUX', 'AXP',
-        'GS', 'BLK', 'IBM', 'UPS', 'CAT', 'HON', 'QCOM', 'AMGN', 'RTX', 'TXN',
-        'LIN', 'PM', 'MCD', 'NKE', 'ADBE', 'ACN', 'NFLX', 'DIS', 'ABT', 'COST',
-        'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'MRK', 'HD', 'ABBV', 'V', 'PG',
-        'MA', 'CVX', 'UNH', 'XOM', 'JNJ', 'JPM', 'BRK-B', 'BAC', 'WFC', 'C',
-        'MS', 'SCHW', 'COF', 'USB', 'PNC', 'TFC', 'BK', 'STT', 'CFG', 'HBAN',
-        'KEY', 'MTB', 'ZION', 'RF', 'FITB', 'CMA', 'WTFC', 'SLB', 'COP', 'EOG',
-        'MPC', 'VLO', 'PSX', 'HAL', 'BKR', 'OVV', 'FANG', 'CTRA', 'MRO', 'DVN',
-        'HES', 'APA', 'PR', 'NOV', 'FTI', 'WMB', 'OKE', 'LLY', 'ABBV', 'TMO',
-        'DHR', 'BDX', 'SYK', 'ISRG', 'ZTS', 'REGN', 'VRTX', 'BIIB', 'GILD', 'AMGN',
-        'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM', 'CRSP', 'NTLA', 'EDIT',
-        'MRNA', 'BNTX', 'CVS', 'CI', 'HUM', 'CNC', 'MOH', 'ELV', 'UNH', 'CVS',
-        'NKE', 'LULU', 'DKS', 'BBY', 'GME', 'AMC', 'ETSY', 'W', 'TGT', 'LOW',
-        'HD', 'COST', 'WMT', 'TGT', 'LOW', 'HD', 'COST', 'WMT', 'TGT', 'LOW',
-        'MCD', 'SBUX', 'YUM', 'CMG', 'DPZ', 'PZZA', 'WEN', 'JACK', 'BLMN', 'DIN',
-        'BA', 'LMT', 'RTX', 'NOC', 'GD', 'TXT', 'CAT', 'DE', 'CMI', 'PCAR',
-        'HON', 'EMR', 'ETN', 'IR', 'ROK', 'PH', 'DOV', 'ITW', 'FAST', 'CTAS',
-        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'AVGO', 'CSCO',
-        'ORCL', 'ADBE', 'CRM', 'INTC', 'AMD', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC',
-        'NXPI', 'ADI', 'MCHP', 'SWKS', 'QRVO', 'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO',
-        'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST', 'LCID', 'RIVN',
-        'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ', 'SHOP', 'ZM', 'DOCU',
-        'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB',
-        'VRNS', 'CRWD', 'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DASH',
-        'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI', 'MTCH', 'IAC',
-        'VZ', 'T', 'TMUS', 'CMCSA', 'DIS', 'NFLX', 'FOXA', 'PARA', 'WBD', 'NWS',
-        'AMT', 'PLD', 'EQIX', 'PSA', 'WELL', 'VICI', 'SPG', 'O', 'DLR', 'EXPI',
-        'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'WEC', 'ES',
-        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'DOW', 'FCX', 'NEM', 'VALE', 'RIO'
+    # 1. 优先从 tickers.csv 读取
+    try:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        csv_path = os.path.join(project_root, "tickers.csv")
+        if os.path.exists(csv_path):
+            logger.info(f"尝试从 {csv_path} 读取股票池 tickers.csv ...")
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                logger.warning("tickers.csv 文件为空，将使用兜底静态列表")
+            else:
+                if "ticker" in df.columns:
+                    raw_tickers = df["ticker"]
+                else:
+                    # 使用第一列作为股票代码列
+                    first_col = df.columns[0]
+                    raw_tickers = df[first_col]
+                tickers = [
+                    str(t).strip().upper()
+                    for t in raw_tickers
+                    if pd.notna(t) and str(t).strip() != ""
+                ]
+                # 去重和基本过滤
+                unique_tickers = sorted(list(set(tickers)))
+                valid_tickers = [
+                    t
+                    for t in unique_tickers
+                    if t
+                    and len(t) <= 5
+                    and t.replace("-", "").replace(".", "").isalnum()
+                ]
+                logger.info(
+                    f"从 tickers.csv 读取到 {len(valid_tickers)} 只有效股票代码 "
+                    "(作为 Russell 1000 静态列表)"
+                )
+                if len(valid_tickers) == 0:
+                    logger.warning("tickers.csv 中没有解析出任何有效股票代码，将使用兜底静态列表")
+                else:
+                    return valid_tickers
+        else:
+            logger.warning(f"未找到 tickers.csv 文件（路径: {csv_path}），将使用兜底静态列表")
+    except Exception as e:
+        logger.warning(f"读取 tickers.csv 失败，将使用兜底静态列表 - {type(e).__name__}: {e}")
+    
+    # 2. 兜底：简短硬编码列表（仅用于保证系统可运行，不追求覆盖全部成分股）
+    fallback_tickers = [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
+        "META", "TSLA", "BRK-B", "UNH", "XOM",
+        "JNJ", "JPM", "V", "PG", "MA",
+        "LLY", "HD", "COST", "AVGO", "PEP",
+        "TMO", "CSCO", "WMT", "DIS", "MRK",
+        "ABBV", "AMD", "INTC", "QCOM", "TXN",
+        "AMAT", "LRCX", "KLAC", "NXPI", "MU",
+    ]
+    unique_tickers = sorted(list(set([t.upper() for t in fallback_tickers])))
+    valid_tickers = [
+        t
+        for t in unique_tickers
+        if t and len(t) <= 5 and t.replace("-", "").replace(".", "").isalnum()
     ]
     
-    # 去重并过滤
-    unique_tickers = sorted(list(set([t.upper() for t in russell1000_tickers])))
-    valid_tickers = [t for t in unique_tickers if t and len(t) <= 5 and t.replace('-', '').replace('.', '').isalnum()]
-    
-    logger.info(f"Russell 1000 静态列表包含 {len(valid_tickers)} 只股票")
+    logger.info(
+        f"使用兜底 Russell 1000 静态列表，共 {len(valid_tickers)} 只股票 "
+        "(请在项目根目录提供 tickers.csv 以获得完整股票池)"
+    )
     return valid_tickers
 
 
@@ -429,7 +387,7 @@ def calculate_market_wide_rs_ranking(
     user_tickers: List[str],
     market_tickers: List[str],
     use_cache: bool = True,
-    max_workers: int = 10
+    max_workers: int = 4
 ) -> tuple:
     """
     计算市场范围的 RS 排名（支持并行计算和本地缓存）
