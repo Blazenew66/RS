@@ -165,8 +165,11 @@ class RSCalculator:
             
             # 对齐日期索引（只保留两个序列都有的日期）
             common_dates = stock_prices.index.intersection(market_prices.index)
-            if len(common_dates) < max(RS_PERIOD_12M + 1, 10):
-                logger.warning(f"数据日期对齐后不足，只有 {len(common_dates)} 个交易日")
+            # 放宽要求：至少需要 63 天（3个月）的数据，而不是 252 天
+            # 这样可以包含次新股，使用较短周期计算 RS
+            min_required_days = max(RS_PERIOD_3M + 1, 63)  # 至少需要 3 个月的数据
+            if len(common_dates) < min_required_days:
+                logger.debug(f"数据日期对齐后不足，只有 {len(common_dates)} 个交易日（需要至少 {min_required_days} 天）")
                 return None
             
             stock_prices = stock_prices.loc[common_dates].sort_index()
@@ -174,16 +177,34 @@ class RSCalculator:
             
             # 注意：这里假设传入的已经是正确的价格序列（Adj Close 或 Close）
             
-            # 计算各周期的股票收益率
+            # 计算各周期的股票收益率（根据可用数据动态调整）
+            # 如果数据不足 252 天，只计算较短周期的收益率
+            available_days = len(stock_prices)
             stock_returns = {}
-            for period in [RS_PERIOD_3M, RS_PERIOD_6M, RS_PERIOD_9M, RS_PERIOD_12M]:
+            market_returns = {}
+            
+            # 根据可用数据选择要计算的周期
+            periods_to_calculate = []
+            if available_days >= RS_PERIOD_12M + 1:
+                periods_to_calculate = [RS_PERIOD_3M, RS_PERIOD_6M, RS_PERIOD_9M, RS_PERIOD_12M]
+            elif available_days >= RS_PERIOD_9M + 1:
+                periods_to_calculate = [RS_PERIOD_3M, RS_PERIOD_6M, RS_PERIOD_9M]
+            elif available_days >= RS_PERIOD_6M + 1:
+                periods_to_calculate = [RS_PERIOD_3M, RS_PERIOD_6M]
+            elif available_days >= RS_PERIOD_3M + 1:
+                periods_to_calculate = [RS_PERIOD_3M]
+            else:
+                logger.debug(f"可用数据天数 ({available_days}) 不足以计算任何周期的收益率")
+                return None
+            
+            # 计算股票收益率
+            for period in periods_to_calculate:
                 return_val = self.calculate_period_return(stock_prices, period)
                 if return_val is not None:
                     stock_returns[period] = return_val
             
-            # 计算各周期的市场收益率
-            market_returns = {}
-            for period in [RS_PERIOD_3M, RS_PERIOD_6M, RS_PERIOD_9M, RS_PERIOD_12M]:
+            # 计算市场收益率
+            for period in periods_to_calculate:
                 return_val = self.calculate_period_return(market_prices, period)
                 if return_val is not None:
                     market_returns[period] = return_val
