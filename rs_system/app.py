@@ -507,13 +507,13 @@ if run_button:
             st.markdown("### 📊 市场概览")
             col1, col2, col3, col4, col5 = st.columns(5)
             
-                with col1:
+            with col1:
                 st.metric("总股票数", len(rankings_df), delta=None)
-                with col2:
+            with col2:
                 st.metric("最高 RS", f"{rankings_df['rs_score'].max():.0f}", delta=None)
-                with col3:
+            with col3:
                 st.metric("平均 RS", f"{rankings_df['rs_score'].mean():.1f}", delta=None)
-                with col4:
+            with col4:
                 rs_80_plus = len(rankings_df[rankings_df['rs_score'] >= 80])
                 st.metric("RS 80+", rs_80_plus, delta=None)
             with col5:
@@ -631,7 +631,7 @@ if run_button:
             st_df.columns = [column_mapping.get(col, col) for col in st_df.columns]
             
             # 使用 st.dataframe 显示表格
-                st.dataframe(
+            st.dataframe(
                 st_df,
                     use_container_width=True,
                     hide_index=True,
@@ -796,7 +796,7 @@ if run_button:
                 csv_df['rs_1w_change'] = rankings_df['rs_score'] - rankings_df['rs_1w_ago'].fillna(rankings_df['rs_score'])
             
             csv = csv_df.to_csv(index=False)
-                st.download_button(
+            st.download_button(
                 label="📥 下载完整数据 (CSV)",
                     data=csv,
                 file_name=f"rs_rankings_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
