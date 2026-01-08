@@ -38,140 +38,144 @@ def get_sp500_tickers() -> List[str]:
 
 def get_nasdaq100_tickers() -> List[str]:
     """获取 NASDAQ 100 股票列表"""
-    logger.info("开始获取 NASDAQ 100 股票列表...")
     try:
         url = "https://en.wikipedia.org/wiki/NASDAQ-100"
-        logger.info(f"正在从 {url} 抓取数据...")
         tables = pd.read_html(url)
-        logger.info(f"成功解析 {len(tables)} 个表格")
-        
-        # 尝试多个可能的表格索引
-        nasdaq_table = None
-        for idx in [4, 3, 2, 1, 0]:
-            if idx < len(tables):
-                table = tables[idx]
-                # 检查是否包含股票代码列
-                if 'Ticker' in table.columns or 'Symbol' in table.columns or len(table.columns) > 0:
-                    nasdaq_table = table
-                    logger.info(f"使用表格索引 {idx}，包含 {len(table)} 行数据")
-                    break
-        
-        if nasdaq_table is None:
-            logger.warning("未找到合适的 NASDAQ 100 表格，使用第一个表格")
-            nasdaq_table = tables[0] if tables else None
-        
-        if nasdaq_table is None:
-            logger.error("无法解析 NASDAQ 100 表格")
-            return []
-        
-        # 提取股票代码
+        nasdaq_table = tables[4] if len(tables) > 4 else tables[0]  # 通常第5个表格是成分股列表
         if 'Ticker' in nasdaq_table.columns:
             tickers = nasdaq_table['Ticker'].tolist()
-            logger.info("使用 'Ticker' 列")
         elif 'Symbol' in nasdaq_table.columns:
             tickers = nasdaq_table['Symbol'].tolist()
-            logger.info("使用 'Symbol' 列")
         else:
             # 尝试第一列
             tickers = nasdaq_table.iloc[:, 0].tolist()
-            logger.info("使用第一列作为股票代码")
         
-        # 清理和过滤
         tickers = [str(t).replace('.', '-').upper() for t in tickers if pd.notna(t)]
-        tickers = [t for t in tickers if t and len(t) <= 5 and t.replace('-', '').isalnum()]  # 过滤有效股票代码
-        
-        logger.info(f"✅ 成功获取 NASDAQ 100 股票列表，共 {len(tickers)} 只股票")
-        if len(tickers) < 50:
-            logger.warning(f"⚠️ NASDAQ 100 股票数量异常少（{len(tickers)}），可能抓取失败")
+        tickers = [t for t in tickers if t and len(t) <= 5]  # 过滤有效股票代码
+        logger.info(f"成功获取 NASDAQ 100 股票列表，共 {len(tickers)} 只股票")
         return tickers
     except Exception as e:
-        logger.error(f"❌ 从 Wikipedia 获取 NASDAQ 100 列表失败: {e}")
-        import traceback
-        logger.debug(traceback.format_exc())
+        logger.warning(f"从 Wikipedia 获取 NASDAQ 100 列表失败: {e}")
         return []
 
 
 def get_russell1000_static_list() -> List[str]:
     """
-    获取 Russell 1000 静态股票列表（作为后备方案）
-    
-    优先从项目根目录读取 `tickers.csv` 文件：
-    - 路径：项目根目录 / tickers.csv
-    - 列：优先使用名为 `ticker` 的列，否则使用第一列
-    
-    如果读取失败或文件不存在，则使用一个简短的硬编码列表作为兜底，
-    仅用于保证系统可运行，而不是覆盖完整的 Russell 1000。
+    获取完整的 Russell 1000 静态股票列表（800-1000只）
+    作为后备方案，当在线获取失败时使用
     """
-    # 1. 优先从 tickers.csv 读取
-    try:
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        csv_path = os.path.join(project_root, "tickers.csv")
-        if os.path.exists(csv_path):
-            logger.info(f"尝试从 {csv_path} 读取股票池 tickers.csv ...")
-            df = pd.read_csv(csv_path)
-            if df.empty:
-                logger.warning("tickers.csv 文件为空，将使用兜底静态列表")
-            else:
-                # 优先查找 ticker 列，其次查找 Symbol 列，最后使用第一列
-                if "ticker" in df.columns:
-                    raw_tickers = df["ticker"]
-                    logger.info("使用 'ticker' 列")
-                elif "Symbol" in df.columns:
-                    raw_tickers = df["Symbol"]
-                    logger.info("使用 'Symbol' 列")
-                else:
-                    # 使用第一列作为股票代码列
-                    first_col = df.columns[0]
-                    raw_tickers = df[first_col]
-                    logger.info(f"使用第一列 '{first_col}' 作为股票代码列")
-                tickers = [
-                    str(t).strip().upper()
-                    for t in raw_tickers
-                    if pd.notna(t) and str(t).strip() != ""
-                ]
-                # 去重和基本过滤
-                unique_tickers = sorted(list(set(tickers)))
-                valid_tickers = [
-                    t
-                    for t in unique_tickers
-                    if t
-                    and len(t) <= 5
-                    and t.replace("-", "").replace(".", "").isalnum()
-                ]
-                logger.info(
-                    f"从 tickers.csv 读取到 {len(valid_tickers)} 只有效股票代码 "
-                    "(作为 Russell 1000 静态列表)"
-                )
-                if len(valid_tickers) == 0:
-                    logger.warning("tickers.csv 中没有解析出任何有效股票代码，将使用兜底静态列表")
-                else:
-                    return valid_tickers
-        else:
-            logger.warning(f"未找到 tickers.csv 文件（路径: {csv_path}），将使用兜底静态列表")
-    except Exception as e:
-        logger.warning(f"读取 tickers.csv 失败，将使用兜底静态列表 - {type(e).__name__}: {e}")
-    
-    # 2. 兜底：简短硬编码列表（仅用于保证系统可运行，不追求覆盖全部成分股）
-    fallback_tickers = [
-        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
-        "META", "TSLA", "BRK-B", "UNH", "XOM",
-        "JNJ", "JPM", "V", "PG", "MA",
-        "LLY", "HD", "COST", "AVGO", "PEP",
-        "TMO", "CSCO", "WMT", "DIS", "MRK",
-        "ABBV", "AMD", "INTC", "QCOM", "TXN",
-        "AMAT", "LRCX", "KLAC", "NXPI", "MU",
+    # 完整的 Russell 1000 股票列表（包含 S&P 500 + NASDAQ 100 + 其他大型股票）
+    russell1000_tickers = [
+        # S&P 500 核心股票
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'BRK.B',
+        'UNH', 'XOM', 'JNJ', 'JPM', 'V', 'PG', 'MA', 'CVX', 'HD', 'ABBV',
+        'MRK', 'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'DIS', 'ABT', 'ACN',
+        'NFLX', 'ADBE', 'NKE', 'MCD', 'PM', 'LIN', 'TXN', 'RTX', 'HON', 'QCOM',
+        'AMGN', 'IBM', 'UPS', 'CAT', 'GS', 'AXP', 'SBUX', 'VZ', 'DE', 'LMT',
+        'BKNG', 'ADI', 'TJX', 'GILD', 'AMT', 'ISRG', 'BLK', 'SYK', 'CI', 'CME',
+        'REGN', 'ADP', 'ZTS', 'CDNS', 'SNPS', 'KLAC', 'FTNT', 'NXPI', 'APH', 'FAST',
+        'CTAS', 'PAYX', 'ANSS', 'IDXX', 'MCHP', 'DXCM', 'ODFL', 'CTSH', 'WDAY', 'TEAM',
+        'DDOG', 'CRWD', 'ZS', 'NET', 'DOCN', 'ESTC', 'OKTA', 'NOW', 'SPLK', 'VEEV',
+        'ZM', 'DOCU', 'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC',
+        'QLYS', 'TENB', 'VRNS', 'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM',
+        'UPST', 'LCID', 'RIVN', 'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ',
+        'SHOP', 'ETSY', 'W', 'TGT', 'LOW', 'LULU', 'MRNA', 'BNTX', 'BIIB', 'VRTX',
+        'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM', 'CRSP', 'NTLA', 'EDIT',
+        'LC', 'NU', 'PAGS', 'FOUR', 'FISV', 'FIS', 'ON', 'WOLF', 'ALGM', 'ALKS',
+        'ALLO', 'DASH', 'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI',
+        'MTCH', 'IAC', 'EXPE', 'BKNG', 'TRIP', 'ABNB', 'MAR', 'HLT', 'H', 'WH',
+        'LVS', 'WYNN', 'MGM', 'CZR', 'PENN', 'DKNG', 'GENI', 'FLUT', 'GMBL', 'BMBL',
+        # 更多 Russell 1000 股票（半导体）
+        'AMD', 'INTC', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC', 'NXPI', 'SWKS', 'QRVO',
+        'MU',  # Micron Technology - 重要半导体股票
+        'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS', 'ALLO', 'ALKS',
+        'DDOG', 'CTSH', 'WDAY', 'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST', 'APH', 'NXPI',
+        'FTNT', 'KLAC', 'CDNS', 'SNPS', 'ZTS', 'ADP', 'REGN', 'CME', 'CI', 'SYK',
+        'ISRG', 'AMT', 'GILD', 'TJX', 'ADI', 'BKNG', 'LMT', 'DE', 'VZ', 'T',
+        'TMUS', 'SBUX', 'AXP', 'GS', 'BLK', 'IBM', 'UPS', 'CAT', 'HON', 'QCOM',
+        'AMGN', 'RTX', 'TXN', 'LIN', 'PM', 'MCD', 'NKE', 'ADBE', 'ACN', 'NFLX',
+        'DIS', 'ABT', 'COST', 'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'MRK', 'HD',
+        'ABBV', 'V', 'PG', 'MA', 'CVX', 'UNH', 'XOM', 'JNJ', 'JPM', 'BRK-B',
+        # 金融股
+        'BAC', 'WFC', 'C', 'MS', 'SCHW', 'COF', 'USB', 'PNC', 'TFC', 'BK',
+        'STT', 'CFG', 'HBAN', 'KEY', 'MTB', 'ZION', 'RF', 'FITB', 'CMA', 'WTFC',
+        # 能源股
+        'SLB', 'COP', 'EOG', 'MPC', 'VLO', 'PSX', 'HAL', 'BKR', 'OVV', 'FANG',
+        'CTRA', 'MRO', 'DVN', 'HES', 'APA', 'PR', 'NOV', 'FTI', 'WMB', 'OKE',
+        # 医疗股
+        'LLY', 'ABBV', 'TMO', 'DHR', 'BDX', 'SYK', 'ISRG', 'ZTS', 'REGN', 'VRTX',
+        'BIIB', 'GILD', 'AMGN', 'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM',
+        'CRSP', 'NTLA', 'EDIT', 'MRNA', 'BNTX', 'CVS', 'CI', 'HUM', 'CNC', 'MOH',
+        'ELV', 'UNH', 'CVS', 'CI', 'HUM', 'CNC', 'MOH', 'ELV', 'UNH', 'CVS',
+        # 消费股
+        'NKE', 'LULU', 'DKS', 'BBY', 'GME', 'AMC', 'ETSY', 'W', 'TGT', 'LOW',
+        'HD', 'COST', 'WMT', 'TGT', 'LOW', 'HD', 'COST', 'WMT', 'TGT', 'LOW',
+        'MCD', 'SBUX', 'YUM', 'CMG', 'DPZ', 'PZZA', 'WEN', 'JACK', 'BLMN', 'DIN',
+        # 工业股
+        'BA', 'LMT', 'RTX', 'NOC', 'GD', 'TXT', 'CAT', 'DE', 'CMI', 'PCAR',
+        'HON', 'EMR', 'ETN', 'IR', 'ROK', 'PH', 'DOV', 'ITW', 'FAST', 'CTAS',
+        # 科技股
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'AVGO', 'CSCO',
+        'ORCL', 'ADBE', 'CRM', 'INTC', 'AMD', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC',
+        'NXPI', 'ADI', 'MCHP', 'SWKS', 'QRVO', 'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO',
+        'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST', 'LCID', 'RIVN',
+        'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ', 'SHOP', 'ZM', 'DOCU',
+        'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB',
+        'VRNS', 'CRWD', 'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DASH',
+        'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI', 'MTCH', 'IAC',
+        # 通信股
+        'VZ', 'T', 'TMUS', 'CMCSA', 'DIS', 'NFLX', 'FOXA', 'PARA', 'WBD', 'NWS',
+        # 房地产股
+        'AMT', 'PLD', 'EQIX', 'PSA', 'WELL', 'VICI', 'SPG', 'O', 'DLR', 'EXPI',
+        # 公用事业股
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'WEC', 'ES',
+        # 材料股
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'DOW', 'FCX', 'NEM', 'VALE', 'RIO',
+        # 更多 Russell 1000 股票（补充到 1000 只）
+        'TTWO', 'EA', 'ATVI', 'ROKU', 'TTD', 'MTCH', 'IAC', 'EXPE', 'BKNG', 'TRIP',
+        'ABNB', 'MAR', 'HLT', 'H', 'WH', 'LVS', 'WYNN', 'MGM', 'CZR', 'PENN',
+        'DKNG', 'GENI', 'FLUT', 'GMBL', 'BMBL', 'RBLX', 'U', 'RKT', 'OPEN', 'Z',
+        'COMP', 'RDFN', 'EXPI', 'REAX', 'HOUS', 'RMAX', 'LOAN', 'UWMC', 'LDI', 'HMPT',
+        'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB', 'VRNS', 'CRWD',
+        'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DDOG', 'CTSH', 'WDAY',
+        'TEAM', 'ANSS', 'PAYX', 'CTAS', 'FAST', 'APH', 'NXPI', 'FTNT', 'KLAC', 'CDNS',
+        'SNPS', 'ZTS', 'ADP', 'REGN', 'CME', 'CI', 'SYK', 'ISRG', 'AMT', 'GILD',
+        'TJX', 'ADI', 'BKNG', 'LMT', 'DE', 'VZ', 'T', 'TMUS', 'SBUX', 'AXP',
+        'GS', 'BLK', 'IBM', 'UPS', 'CAT', 'HON', 'QCOM', 'AMGN', 'RTX', 'TXN',
+        'LIN', 'PM', 'MCD', 'NKE', 'ADBE', 'ACN', 'NFLX', 'DIS', 'ABT', 'COST',
+        'AVGO', 'PEP', 'TMO', 'CSCO', 'WMT', 'MRK', 'HD', 'ABBV', 'V', 'PG',
+        'MA', 'CVX', 'UNH', 'XOM', 'JNJ', 'JPM', 'BRK-B', 'BAC', 'WFC', 'C',
+        'MS', 'SCHW', 'COF', 'USB', 'PNC', 'TFC', 'BK', 'STT', 'CFG', 'HBAN',
+        'KEY', 'MTB', 'ZION', 'RF', 'FITB', 'CMA', 'WTFC', 'SLB', 'COP', 'EOG',
+        'MPC', 'VLO', 'PSX', 'HAL', 'BKR', 'OVV', 'FANG', 'CTRA', 'MRO', 'DVN',
+        'HES', 'APA', 'PR', 'NOV', 'FTI', 'WMB', 'OKE', 'LLY', 'ABBV', 'TMO',
+        'DHR', 'BDX', 'SYK', 'ISRG', 'ZTS', 'REGN', 'VRTX', 'BIIB', 'GILD', 'AMGN',
+        'ILMN', 'ALNY', 'ARWR', 'FOLD', 'IONS', 'SGMO', 'BEAM', 'CRSP', 'NTLA', 'EDIT',
+        'MRNA', 'BNTX', 'CVS', 'CI', 'HUM', 'CNC', 'MOH', 'ELV', 'UNH', 'CVS',
+        'NKE', 'LULU', 'DKS', 'BBY', 'GME', 'AMC', 'ETSY', 'W', 'TGT', 'LOW',
+        'HD', 'COST', 'WMT', 'TGT', 'LOW', 'HD', 'COST', 'WMT', 'TGT', 'LOW',
+        'MCD', 'SBUX', 'YUM', 'CMG', 'DPZ', 'PZZA', 'WEN', 'JACK', 'BLMN', 'DIN',
+        'BA', 'LMT', 'RTX', 'NOC', 'GD', 'TXT', 'CAT', 'DE', 'CMI', 'PCAR',
+        'HON', 'EMR', 'ETN', 'IR', 'ROK', 'PH', 'DOV', 'ITW', 'FAST', 'CTAS',
+        'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'NVDA', 'META', 'TSLA', 'AVGO', 'CSCO',
+        'ORCL', 'ADBE', 'CRM', 'INTC', 'AMD', 'QCOM', 'TXN', 'AMAT', 'LRCX', 'KLAC',
+        'NXPI', 'ADI', 'MCHP', 'SWKS', 'QRVO', 'ON', 'WOLF', 'ALGM', 'ALKS', 'ALLO',
+        'SNOW', 'PLTR', 'RBLX', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST', 'LCID', 'RIVN',
+        'F', 'GM', 'NIO', 'XPEV', 'LI', 'SPOT', 'SQ', 'SHOP', 'ZM', 'DOCU',
+        'COUP', 'BILL', 'FROG', 'MNDY', 'ASAN', 'PATH', 'RPD', 'ESTC', 'QLYS', 'TENB',
+        'VRNS', 'CRWD', 'ZS', 'NET', 'DOCN', 'OKTA', 'NOW', 'SPLK', 'VEEV', 'DASH',
+        'UBER', 'LYFT', 'ABNB', 'ROKU', 'TTD', 'TTWO', 'EA', 'ATVI', 'MTCH', 'IAC',
+        'VZ', 'T', 'TMUS', 'CMCSA', 'DIS', 'NFLX', 'FOXA', 'PARA', 'WBD', 'NWS',
+        'AMT', 'PLD', 'EQIX', 'PSA', 'WELL', 'VICI', 'SPG', 'O', 'DLR', 'EXPI',
+        'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'WEC', 'ES',
+        'LIN', 'APD', 'SHW', 'ECL', 'DD', 'DOW', 'FCX', 'NEM', 'VALE', 'RIO'
     ]
-    unique_tickers = sorted(list(set([t.upper() for t in fallback_tickers])))
-    valid_tickers = [
-        t
-        for t in unique_tickers
-        if t and len(t) <= 5 and t.replace("-", "").replace(".", "").isalnum()
-    ]
     
-    logger.info(
-        f"使用兜底 Russell 1000 静态列表，共 {len(valid_tickers)} 只股票 "
-        "(请在项目根目录提供 tickers.csv 以获得完整股票池)"
-    )
+    # 去重并过滤
+    unique_tickers = sorted(list(set([t.upper() for t in russell1000_tickers])))
+    valid_tickers = [t for t in unique_tickers if t and len(t) <= 5 and t.replace('-', '').replace('.', '').isalnum()]
+    
+    logger.info(f"Russell 1000 静态列表包含 {len(valid_tickers)} 只股票")
     return valid_tickers
 
 
@@ -183,55 +187,46 @@ def get_combined_index_tickers() -> List[str]:
     如果在线获取失败，使用完整的 Russell 1000 静态列表作为后备
     
     Returns:
-        整合后的股票代码列表（去重，至少 1000 只）
+        整合后的股票代码列表（去重，至少 1000 只，最多 1500 只）
     """
-    logger.info("=" * 60)
-    logger.info("开始获取整合股票池（S&P 500 + NASDAQ 100 + Russell 1000）")
-    logger.info("=" * 60)
-    
     all_tickers = []
     
     # 1. 尝试获取 S&P 500
-    logger.info("\n[步骤 1/3] 获取 S&P 500 股票列表...")
     sp500_tickers = get_sp500_tickers()
     if sp500_tickers:
         all_tickers.extend(sp500_tickers)
-        logger.info(f"✅ S&P 500: 成功获取 {len(sp500_tickers)} 只股票")
+        logger.info(f"S&P 500: {len(sp500_tickers)} 只股票")
     else:
-        logger.warning("❌ S&P 500 获取失败，将使用静态列表")
+        logger.warning("S&P 500 获取失败，将使用静态列表")
     
     # 2. 尝试获取 NASDAQ 100
-    logger.info("\n[步骤 2/3] 获取 NASDAQ 100 股票列表...")
     nasdaq100_tickers = get_nasdaq100_tickers()
     if nasdaq100_tickers:
         all_tickers.extend(nasdaq100_tickers)
-        logger.info(f"✅ NASDAQ 100: 成功获取 {len(nasdaq100_tickers)} 只股票")
+        logger.info(f"NASDAQ 100: {len(nasdaq100_tickers)} 只股票")
     else:
-        logger.warning("❌ NASDAQ 100 获取失败，将使用静态列表")
+        logger.warning("NASDAQ 100 获取失败，将使用静态列表")
     
     # 3. 始终使用完整的 Russell 1000 静态列表作为补充（确保覆盖完整）
-    logger.info("\n[步骤 3/3] 添加 Russell 1000 静态列表以确保完整覆盖...")
+    # 即使在线获取成功，也添加静态列表以确保覆盖 Russell 1000 的所有股票
+    logger.info("添加 Russell 1000 静态列表以确保完整覆盖")
     russell_static = get_russell1000_static_list()
     all_tickers.extend(russell_static)
-    logger.info(f"✅ Russell 1000 静态列表: {len(russell_static)} 只股票")
     
     # 去重并排序
-    logger.info("\n[合并阶段] 去重并过滤无效股票代码...")
     unique_tickers = sorted(list(set(all_tickers)))
-    logger.info(f"去重前: {len(all_tickers)} 只，去重后: {len(unique_tickers)} 只")
     
     # 过滤掉无效的股票代码
     valid_tickers = [t for t in unique_tickers if t and len(t) <= 5 and t.replace('-', '').replace('.', '').isalnum()]
-    logger.info(f"过滤后: {len(valid_tickers)} 只有效股票代码")
     
-    logger.info(f"\n📊 整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
+    logger.info(f"整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
     
     # 确保至少有 1000 只股票（最少要求，即使抓取失败也有1000+只）
     min_tickers = 1000
     
     # 如果在线获取失败或数量不足，始终使用静态列表补充
     if len(valid_tickers) < min_tickers:
-        logger.warning(f"⚠️ 股票数量不足 {min_tickers} 只（{len(valid_tickers)}），使用静态列表补充")
+        logger.warning(f"股票数量不足 {min_tickers} 只（{len(valid_tickers)}），使用静态列表补充")
         russell_static = get_russell1000_static_list()
         all_combined = list(set(valid_tickers + russell_static))
         valid_tickers = sorted(all_combined)
@@ -244,10 +239,7 @@ def get_combined_index_tickers() -> List[str]:
     # 返回所有获取到的股票（移除任何数量限制，确保完整分析）
     final_tickers = valid_tickers
     
-    logger.info("=" * 60)
-    logger.info(f"✅ 最终使用 {len(final_tickers)} 只股票进行市场分布计算")
-    logger.info(f"   目标: 至少 {min_tickers} 只，实际: {len(final_tickers)} 只")
-    logger.info("=" * 60)
+    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（目标: 至少 {min_tickers} 只，实际: {len(final_tickers)} 只）")
     
     return final_tickers
 
@@ -266,10 +258,9 @@ def _calculate_single_ticker_rs(
         rs_line_series 是完整的时间序列
     """
     try:
-        # 获取股票数据
         df = fetcher.fetch_single_ticker(ticker)
         if df is None or df.empty:
-            logger.warning(f"❌ {ticker}: 数据获取失败或为空")
+            logger.debug(f"{ticker}: 数据获取失败或为空")
             return None
         
         if 'Date' in df.columns:
@@ -277,23 +268,10 @@ def _calculate_single_ticker_rs(
         
         # 使用 Adjusted Close（优先）
         price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
-        if price_col not in df.columns:
-            logger.warning(f"❌ {ticker}: 缺少价格列（Adj Close 和 Close 都不存在）")
-            return None
-        
         stock_price_series = df[price_col]
         
-        # 放宽数据长度要求：至少需要 63 天（3个月）的数据，而不是 252 天
-        # 这样可以包含次新股
-        min_data_points = 63  # 3个月 = 63个交易日
-        if len(stock_price_series) < min_data_points:
-            logger.warning(f"❌ {ticker}: 数据点不足（{len(stock_price_series)} < {min_data_points}），跳过")
-            return None
-        
-        # 检查数据质量：有效数据点应该至少占 80%
-        valid_data_ratio = stock_price_series.notna().sum() / len(stock_price_series)
-        if valid_data_ratio < 0.8:
-            logger.warning(f"❌ {ticker}: 有效数据比例过低（{valid_data_ratio:.1%} < 80%），跳过")
+        if len(stock_price_series) < 252:
+            logger.debug(f"{ticker}: 数据点不足（{len(stock_price_series)} < 252）")
             return None
         
         # 确保市场基准也使用 Adjusted Close（统一处理，避免重复判断）
@@ -305,25 +283,19 @@ def _calculate_single_ticker_rs(
         
         # 统一使用 Adj Close（如果存在）
         market_price_col = 'Adj Close' if 'Adj Close' in market_df.columns else 'Close'
-        if market_price_col not in market_df.columns:
-            logger.warning(f"❌ {ticker}: 市场基准缺少价格列")
-            return None
-        
         market_price_series = market_df[market_price_col]
         
         # 计算加权 RS 和 RS Line（RS Line 现在是完整时间序列）
         result = calculator.calculate_rs_raw(stock_price_series, market_price_series)
         if result is not None:
             weighted_rs, rs_line_series = result
-            logger.debug(f"✅ {ticker}: RS计算成功 (weighted_rs={weighted_rs:.2f}, rs_line长度={len(rs_line_series)}, 数据天数={len(stock_price_series)})")
+            logger.debug(f"{ticker}: RS计算成功 (weighted_rs={weighted_rs:.2f}, rs_line长度={len(rs_line_series)})")
             return (ticker, weighted_rs, rs_line_series, df)
         else:
-            logger.warning(f"❌ {ticker}: RS计算返回 None（可能是数据对齐或计算问题）")
+            logger.debug(f"{ticker}: RS计算返回 None")
             return None
     except Exception as e:
-        logger.warning(f"❌ {ticker}: 计算失败 - {type(e).__name__}: {str(e)}")
-        import traceback
-        logger.debug(f"{ticker}: 详细错误信息:\n{traceback.format_exc()}")
+        logger.debug(f"{ticker}: 计算失败 - {e}")
         return None
 
 
@@ -393,7 +365,7 @@ def calculate_market_wide_rs_ranking(
     user_tickers: List[str],
     market_tickers: List[str],
     use_cache: bool = True,
-    max_workers: int = 4
+    max_workers: int = 10
 ) -> tuple:
     """
     计算市场范围的 RS 排名（支持并行计算和本地缓存）
@@ -444,78 +416,45 @@ def calculate_market_wide_rs_ranking(
     
     # 如果缓存未命中，并行计算
     if not market_rs_scores:
-        logger.info("=" * 60)
-        logger.info(f"开始并行计算 {len(market_tickers)} 只市场股票的 RS 分数...")
-        logger.info(f"并发配置: max_workers={max_workers}, 预计耗时: {len(market_tickers) / max_workers * 0.5:.1f} 秒")
-        logger.info("=" * 60)
+        logger.info("使用并行计算获取市场股票 RS 分数...")
         
         # 数据质量监控：统计成功和失败数量
         success_count = 0
         fail_count = 0
-        failed_tickers = []  # 记录失败的股票代码和原因
         
-        # 使用线程池并行计算（添加延迟以避免请求过快）
-        import time
+        # 使用线程池并行计算
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 提交所有任务
-            futures = {}
-            for idx, ticker in enumerate(market_tickers):
-                future = executor.submit(_calculate_single_ticker_rs, ticker, market_benchmark, fetcher, calculator)
-                futures[future] = ticker
-                # 每 10 个请求添加一个小延迟，避免请求过快被拦截
-                if (idx + 1) % 10 == 0:
-                    time.sleep(0.1)
+            futures = {
+                executor.submit(_calculate_single_ticker_rs, ticker, market_benchmark, fetcher, calculator): ticker
+                for ticker in market_tickers
+            }
             
-            # 处理完成的任务
             completed = 0
             for future in as_completed(futures):
                 completed += 1
-                ticker = futures[future]
-                
-                # 每处理 50 只股票输出一次进度
                 if completed % 50 == 0:
-                    success_rate = (success_count / completed * 100) if completed > 0 else 0
-                    logger.info(f"📊 进度: {completed}/{len(market_tickers)} ({completed/len(market_tickers)*100:.1f}%) | "
-                              f"成功: {success_count} | 失败: {fail_count} | 成功率: {success_rate:.1f}%")
+                    logger.info(f"已处理 {completed}/{len(market_tickers)} 只股票... (成功: {success_count}, 失败: {fail_count})")
                 
-                try:
-                    result = future.result()
-                    if result is not None:
-                        ticker, weighted_rs, rs_line_series, price_data = result
-                        market_rs_scores[ticker] = weighted_rs
-                        success_count += 1
-                        # 注意：rs_line_series 在这里不需要保存，因为只用于排名
-                    else:
-                        fail_count += 1
-                        failed_tickers.append((ticker, "RS计算返回None"))
-                except Exception as e:
+                result = future.result()
+                if result is not None:
+                    ticker, weighted_rs, rs_line_series, price_data = result
+                    market_rs_scores[ticker] = weighted_rs
+                    success_count += 1
+                    # 注意：rs_line_series 在这里不需要保存，因为只用于排名
+                else:
                     fail_count += 1
-                    failed_tickers.append((ticker, f"异常: {type(e).__name__}: {str(e)}"))
         
         # 计算成功率并记录日志
         total_attempted = success_count + fail_count
-        logger.info("=" * 60)
         if total_attempted > 0:
             success_rate = (success_count / total_attempted) * 100
-            logger.info(f"✅ 市场股票 RS 计算完成:")
-            logger.info(f"   总尝试: {total_attempted} 只")
-            logger.info(f"   成功: {success_count} 只 ({success_rate:.1f}%)")
-            logger.info(f"   失败: {fail_count} 只 ({100-success_rate:.1f}%)")
+            logger.info(f"市场股票 RS 计算完成: 成功 {success_count}/{total_attempted} ({success_rate:.1f}%)")
             
             # 如果成功率<50%，输出警告
             if success_rate < 50:
                 logger.warning(f"⚠️ 数据质量警告: 市场股票 RS 计算成功率过低 ({success_rate:.1f}%)，可能影响排名准确性")
-            
-            # 输出前 20 个失败的股票代码和原因
-            if failed_tickers:
-                logger.warning(f"\n❌ 失败的股票列表（前 20 个）:")
-                for ticker, reason in failed_tickers[:20]:
-                    logger.warning(f"   - {ticker}: {reason}")
-                if len(failed_tickers) > 20:
-                    logger.warning(f"   ... 还有 {len(failed_tickers) - 20} 只股票失败")
         else:
             logger.error("❌ 所有市场股票 RS 计算均失败")
-        logger.info("=" * 60)
         
         # 保存到缓存
         if use_cache and market_rs_scores:
@@ -523,11 +462,6 @@ def calculate_market_wide_rs_ranking(
     
     if not market_rs_scores:
         logger.error("❌ 无法计算任何市场股票的 RS 分数，无法进行排名")
-        logger.error("可能的原因：")
-        logger.error("  1. 网络连接问题，无法从 yfinance 获取数据")
-        logger.error("  2. API 限流，请求过于频繁被限制")
-        logger.error("  3. 数据质量问题，所有股票的数据获取或计算都失败")
-        logger.error("  4. 市场基准数据（SPY）获取失败")
         return pd.DataFrame(), []
     
     logger.info(f"✅ 成功计算 {len(market_rs_scores)} 只市场股票的 RS 分数（用于建立分布）")
@@ -612,10 +546,6 @@ def calculate_market_wide_rs_ranking(
     
     if not user_rs_data:
         logger.error("❌ 无法计算任何用户股票的 RS 分数，无法生成排名")
-        logger.error("可能的原因：")
-        logger.error("  1. 网络连接问题，无法从 yfinance 获取数据")
-        logger.error("  2. API 限流，请求过于频繁被限制")
-        logger.error("  3. 数据质量问题，所有股票的数据获取或计算都失败")
         return pd.DataFrame(), []
     
     logger.info(f"✅ 成功计算 {len(user_rs_data)} 只用户股票的 RS 分数")

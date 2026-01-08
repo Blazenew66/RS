@@ -400,10 +400,8 @@ def calculate_volatility_contraction(price_data: pd.DataFrame, days: int = 10) -
 
 def is_stage2_trend(price_data: pd.DataFrame) -> bool:
     """
-    判断股票是否处于第二阶段趋势（强化版）：
+    判断股票是否处于第二阶段趋势：
     - Price > SMA50 > SMA150 > SMA200
-    - SMA50 与 SMA200 至少相差 15%（趋势足够陡峭）
-    - 最近一段时间（默认 6 个月）最大回撤不超过约 30%
     
     Args:
         price_data: 包含价格数据的 DataFrame
@@ -430,39 +428,10 @@ def is_stage2_trend(price_data: pd.DataFrame) -> bool:
         if pd.isna(sma50) or pd.isna(sma150) or pd.isna(sma200) or pd.isna(current_price):
             return False
         
-        # 基本第二阶段趋势条件
-        basic_stage2 = (current_price > sma50 and 
-                        sma50 > sma150 and 
-                        sma150 > sma200)
-        if not basic_stage2:
-            return False
-        
-        # 强化条件1：SMA50 与 SMA200 至少相差 15%
-        if sma200 == 0 or pd.isna(sma200):
-            return False
-        sma50_vs_200_pct = (sma50 - sma200) / sma200 * 100
-        if sma50_vs_200_pct < 15.0:
-            return False
-        
-        # 强化条件2：最近约 6 个月（126 个交易日）最大回撤不超过 30%
-        lookback_days = 126
-        if len(prices) >= lookback_days:
-            recent_prices = prices.tail(lookback_days)
-        else:
-            recent_prices = prices
-        
-        rolling_max = recent_prices.cummax()
-        drawdown_series = (recent_prices / rolling_max - 1.0) * 100  # 负数表示回撤
-        max_drawdown = drawdown_series.min()  # 最严重的回撤（最小的负数）
-        
-        if pd.isna(max_drawdown):
-            return False
-        
-        # 要求最大回撤不小于 -30%（例如 -25% / -20% 可以接受）
-        if max_drawdown < -30.0:
-            return False
-        
-        return True
+        # 检查第二阶段趋势条件
+        return (current_price > sma50 and 
+                sma50 > sma150 and 
+                sma150 > sma200)
         
     except Exception as e:
         logger.debug(f"判断第二阶段趋势失败: {e}")
@@ -517,109 +486,4 @@ def is_leader_stock(
     except Exception as e:
         logger.debug(f"判断领导者股票失败: {e}")
         return False
-
-
-def calculate_avg_dollar_volume(price_data: pd.DataFrame, days: int = 50) -> Optional[float]:
-    """
-    计算最近 N 日平均成交额（美元），用于流动性过滤。
-    
-    Args:
-        price_data: 包含价格和成交量的 DataFrame（需要 'Volume' 和价格列）
-        days: 计算天数（默认 50 日）
-    
-    Returns:
-        平均每日成交额（美元），如果计算失败返回 None
-    """
-    try:
-        if 'Volume' not in price_data.columns:
-            return None
-        
-        price_col = 'Adj Close' if 'Adj Close' in price_data.columns else 'Close'
-        if price_col not in price_data.columns:
-            return None
-        
-        df = price_data[[price_col, 'Volume']].dropna()
-        if len(df) < days:
-            return None
-        
-        recent = df.tail(days)
-        dollar_volume = recent[price_col] * recent['Volume']
-        avg_dollar_volume = float(dollar_volume.mean())
-        return avg_dollar_volume
-    except Exception as e:
-        logger.debug(f"计算平均成交额失败: {e}")
-        return None
-
-
-def calculate_atr_pct(price_data: pd.DataFrame, period: int = 14) -> Optional[float]:
-    """
-    计算 ATR 占当前价格的百分比（粗略日波动率），用于风险过滤。
-    
-    Args:
-        price_data: 包含 High/Low/Close 的 DataFrame
-        period: ATR 计算周期（默认 14 日）
-    
-    Returns:
-        ATR 百分比（ATR / Close * 100），如果计算失败返回 None
-    """
-    try:
-        required_cols = {'High', 'Low', 'Close'}
-        if not required_cols.issubset(set(price_data.columns)):
-            return None
-        
-        df = price_data[['High', 'Low', 'Close']].dropna()
-        if len(df) < period + 1:
-            return None
-        
-        high = df['High']
-        low = df['Low']
-        close = df['Close']
-        
-        prev_close = close.shift(1)
-        tr1 = high - low
-        tr2 = (high - prev_close).abs()
-        tr3 = (low - prev_close).abs()
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        
-        atr = tr.rolling(window=period).mean().iloc[-1]
-        current_price = close.iloc[-1]
-        
-        if pd.isna(atr) or pd.isna(current_price) or current_price == 0:
-            return None
-        
-        atr_pct = float(atr / current_price * 100.0)
-        return round(atr_pct, 2)
-    except Exception as e:
-        logger.debug(f"计算 ATR 百分比失败: {e}")
-        return None
-
-
-def calculate_price_52w_distance(price_data: pd.DataFrame) -> Optional[float]:
-    """
-    计算当前价格距离 52 周（252 日）最高价的距离（百分比）。
-    
-    正值表示“距离新高还有多少百分比”，用于筛选接近新高的股票。
-    例如：distance = 3.0 表示当前价格比 52 周高点低 3%。
-    """
-    try:
-        price_col = 'Adj Close' if 'Adj Close' in price_data.columns else 'Close'
-        if price_col not in price_data.columns:
-            return None
-        
-        prices = price_data[price_col].dropna()
-        if len(prices) < 20:
-            return None
-        
-        recent_252 = prices.tail(252)
-        high_52w = recent_252.max()
-        current_price = prices.iloc[-1]
-        
-        if pd.isna(high_52w) or pd.isna(current_price) or high_52w == 0:
-            return None
-        
-        distance_pct = (high_52w - current_price) / high_52w * 100.0
-        return round(distance_pct, 2)
-    except Exception as e:
-        logger.debug(f"计算价格距离52周新高失败: {e}")
-        return None
 
