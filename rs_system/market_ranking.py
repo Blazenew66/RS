@@ -112,12 +112,18 @@ def get_russell1000_static_list() -> List[str]:
             if df.empty:
                 logger.warning("tickers.csv 文件为空，将使用兜底静态列表")
             else:
+                # 优先查找 ticker 列，其次查找 Symbol 列，最后使用第一列
                 if "ticker" in df.columns:
                     raw_tickers = df["ticker"]
+                    logger.info("使用 'ticker' 列")
+                elif "Symbol" in df.columns:
+                    raw_tickers = df["Symbol"]
+                    logger.info("使用 'Symbol' 列")
                 else:
                     # 使用第一列作为股票代码列
                     first_col = df.columns[0]
                     raw_tickers = df[first_col]
+                    logger.info(f"使用第一列 '{first_col}' 作为股票代码列")
                 tickers = [
                     str(t).strip().upper()
                     for t in raw_tickers
@@ -517,6 +523,11 @@ def calculate_market_wide_rs_ranking(
     
     if not market_rs_scores:
         logger.error("❌ 无法计算任何市场股票的 RS 分数，无法进行排名")
+        logger.error("可能的原因：")
+        logger.error("  1. 网络连接问题，无法从 yfinance 获取数据")
+        logger.error("  2. API 限流，请求过于频繁被限制")
+        logger.error("  3. 数据质量问题，所有股票的数据获取或计算都失败")
+        logger.error("  4. 市场基准数据（SPY）获取失败")
         return pd.DataFrame(), []
     
     logger.info(f"✅ 成功计算 {len(market_rs_scores)} 只市场股票的 RS 分数（用于建立分布）")
@@ -601,6 +612,10 @@ def calculate_market_wide_rs_ranking(
     
     if not user_rs_data:
         logger.error("❌ 无法计算任何用户股票的 RS 分数，无法生成排名")
+        logger.error("可能的原因：")
+        logger.error("  1. 网络连接问题，无法从 yfinance 获取数据")
+        logger.error("  2. API 限流，请求过于频繁被限制")
+        logger.error("  3. 数据质量问题，所有股票的数据获取或计算都失败")
         return pd.DataFrame(), []
     
     logger.info(f"✅ 成功计算 {len(user_rs_data)} 只用户股票的 RS 分数")
