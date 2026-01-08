@@ -299,6 +299,46 @@ if run_button:
             
             if rankings_df is None or rankings_df.empty:
                 st.error("❌ 未能计算出排名结果")
+                st.markdown("### 🔍 可能的原因：")
+                st.markdown("""
+                1. **网络连接问题**：无法从 yfinance 获取股票数据
+                2. **API 限流**：请求过于频繁被限制
+                3. **数据质量问题**：所有股票的数据获取或计算都失败
+                4. **市场基准数据缺失**：无法获取 SPY 数据
+                
+                **建议：**
+                - 检查网络连接
+                - 查看终端/日志中的详细错误信息
+                - 尝试减少股票数量或降低并发数
+                - 检查 yfinance 是否正常工作
+                """)
+                
+                # 尝试测试单个股票数据获取
+                with st.expander("🔧 诊断信息"):
+                    try:
+                        from rs_system.data_fetcher import DataFetcher
+                        from rs_system.config import MARKET_BENCHMARK
+                        fetcher = DataFetcher()
+                        
+                        st.write("**测试数据获取：**")
+                        # 测试 SPY
+                        spy_test = fetcher.fetch_single_ticker(MARKET_BENCHMARK)
+                        if spy_test is not None and not spy_test.empty:
+                            st.success(f"✅ {MARKET_BENCHMARK} 数据获取成功（{len(spy_test)} 条记录）")
+                        else:
+                            st.error(f"❌ {MARKET_BENCHMARK} 数据获取失败")
+                        
+                        # 测试单个股票
+                        if market_tickers and len(market_tickers) > 0:
+                            test_ticker = market_tickers[0]
+                            test_data = fetcher.fetch_single_ticker(test_ticker)
+                            if test_data is not None and not test_data.empty:
+                                st.success(f"✅ {test_ticker} 数据获取成功（{len(test_data)} 条记录）")
+                            else:
+                                st.error(f"❌ {test_ticker} 数据获取失败")
+                    except Exception as e:
+                        st.error(f"诊断过程出错: {str(e)}")
+                
                 st.stop()
             
             # 步骤3: 计算额外指标
