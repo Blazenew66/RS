@@ -503,7 +503,7 @@ if run_button:
             st.success(f"✅ 成功分析 {len(rankings_df)} 只市场基准股票（S&P 500 + NASDAQ 100 + Russell 1000）")
             
             # 统计信息卡片（美化）
-        st.markdown("---")
+            st.markdown("---")
             st.markdown("### 📊 市场概览")
             col1, col2, col3, col4, col5 = st.columns(5)
             
