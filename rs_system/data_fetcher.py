@@ -93,8 +93,7 @@ class DataFetcher:
                     period=YFINANCE_PERIOD,
                     interval=YFINANCE_INTERVAL,
                     timeout=DATA_FETCH_TIMEOUT,
-                    progress=False,
-                    show_errors=False
+                    progress=False
                 )
                 if isinstance(df.columns, pd.MultiIndex):
                     df = df.droplevel(0, axis=1)
