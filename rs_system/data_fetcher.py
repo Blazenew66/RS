@@ -93,7 +93,9 @@ class DataFetcher:
                     period=YFINANCE_PERIOD,
                     interval=YFINANCE_INTERVAL,
                     timeout=DATA_FETCH_TIMEOUT,
-                    progress=False
+                    threads=False,
+                    progress=False,
+                    verify=False  # 强制跳过 SSL 证书验证
                 )
                 if isinstance(df.columns, pd.MultiIndex):
                     df = df.droplevel(0, axis=1)
@@ -109,7 +111,7 @@ class DataFetcher:
                     time.sleep(0.5 * (attempt + 1))
                     continue
                 else:
-                    logger.error(f"{ticker}: 获取数据失败（已重试 {retry_count} 次）- {str(e)}")
+                    logger.error(f"{ticker}: 获取数据失败（已重试 {retry_count} 次）- {type(e).__name__}: {e}")
                     return None
         
         if df is None or df.empty:
