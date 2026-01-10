@@ -58,6 +58,18 @@ RS_WEIGHTS = {
 SP500_LIST_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 
 # ==================== 数据源配置 ====================
+# 数据源模式 ('local_stooq' 或 'yfinance')
+# 'local_stooq': 优先读取本地 Stooq 数据，yfinance 作为备用/补丁
+# 'yfinance': 仅使用 yfinance
+DATA_SOURCE_MODE = os.getenv('DATA_SOURCE_MODE', 'local_stooq')
+
+# Stooq 本地数据目录 (当 DATA_SOURCE_MODE = 'local_stooq' 时生效)
+STOOQ_DATA_DIR = os.getenv('STOOQ_DATA_DIR', 'data')
+
+# 是否开启 Stooq 数据增量更新（使用 yfinance 补齐缺失的最新数据）
+STOOQ_DATA_PATCH = os.getenv('STOOQ_DATA_PATCH', 'True').lower() in ('true', '1', 't')
+
+
 # 使用 yfinance，默认参数
 YFINANCE_PERIOD = "2y"  # 获取2年数据以确保有足够的历史数据
 YFINANCE_INTERVAL = "1d"

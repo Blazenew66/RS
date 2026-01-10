@@ -1,5 +1,5 @@
 """
-数据获取模块：从 yfinance 获取股票历史价格数据和元数据
+数据获取模块：支持本地 Stooq 和 yfinance 数据源
 """
 import yfinance as yf
 import pandas as pd
@@ -7,58 +7,28 @@ import time
 from typing import List, Dict, Optional
 import logging
 import ssl
-import urllib.request
 import urllib3
 import os
 import pickle
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rs_system.config import (
+    DATA_SOURCE_MODE,
+    STOOQ_DATA_DIR,
     YFINANCE_PERIOD,
     YFINANCE_INTERVAL,
     DATA_FETCH_TIMEOUT,
-    BATCH_SIZE,
     MIN_DATA_POINTS,
     MISSING_DATA_THRESHOLD,
     VERIFY_SSL
 )
+from rs_system.stooq_data_loader import load_stooq_data_for_ticker
 
 logger = logging.getLogger(__name__)
 
 # 缓存目录
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '.cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
-
-# 尝试找到证书文件路径
-def _get_cert_path():
-    """尝试找到证书文件路径"""
-    try:
-        import certifi
-        cert_path = certifi.where()
-        if os.path.exists(cert_path):
-            return cert_path
-    except:
-        pass
-    return None
-
-# 设置证书路径
-cert_path = _get_cert_path()
-if not VERIFY_SSL:
-    os.environ.pop('CURL_CA_BUNDLE', None)
-    os.environ.pop('REQUESTS_CA_BUNDLE', None)
-    os.environ.pop('SSL_CERT_FILE', None)
-    logger.info("已禁用 SSL 证书验证")
-elif cert_path:
-    os.environ['CURL_CA_BUNDLE'] = cert_path
-    os.environ['REQUESTS_CA_BUNDLE'] = cert_path
-    os.environ['SSL_CERT_FILE'] = cert_path
-    logger.info(f"已设置证书路径: {cert_path}")
-else:
-    os.environ.pop('CURL_CA_BUNDLE', None)
-    os.environ.pop('REQUESTS_CA_BUNDLE', None)
-    os.environ.pop('SSL_CERT_FILE', None)
-    logger.warning("未找到证书文件，尝试禁用 SSL 验证")
-
 
 class DataFetcher:
     """股票数据获取器"""
@@ -70,19 +40,28 @@ class DataFetcher:
             try:
                 ssl._create_default_https_context = ssl._create_unverified_context
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                import warnings
-                warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWarning)
                 logger.info("已禁用 SSL 证书验证（仅用于解决证书问题）")
             except Exception as e:
                 logger.warning(f"设置 SSL 上下文失败: {e}")
 
     def fetch_single_ticker(self, ticker: str, retry_count: int = 2) -> Optional[pd.DataFrame]:
-        """获取单个股票的历史数据"""
-        if not VERIFY_SSL:
-            import warnings
-            warnings.filterwarnings('ignore', message='Unverified HTTPS request')
-            warnings.filterwarnings('ignore', category=urllib3.exceptions.InsecureRequestWarning)
-        
+        """
+        获取单个股票的历史数据。
+        根据 config.DATA_SOURCE_MODE 决定数据源:
+        - 'local_stooq': 优先从本地 Stooq 文件加载，失败则回退到 yfinance。
+        - 'yfinance': 直接使用 yfinance。
+        """
+        # 模式1: Stooq 本地优先
+        if DATA_SOURCE_MODE == 'local_stooq':
+            df = load_stooq_data_for_ticker(ticker, STOOQ_DATA_DIR)
+            if df is not None and not df.empty:
+                logger.debug(f"{ticker}: 成功使用本地 Stooq 数据源")
+                return df
+            else:
+                logger.info(f"{ticker}: 本地 Stooq 数据未找到或加载失败，回退到 yfinance")
+
+        # 模式2: yfinance (或 Stooq 回退)
+        logger.debug(f"{ticker}: 正在从 yfinance 获取数据...")
         df = None
         last_error = None
         
@@ -146,7 +125,6 @@ class DataFetcher:
             stock = yf.Ticker(ticker)
             info = stock.get_info() or {}
             
-            # 提取需要的字段
             meta = {
                 'ticker': ticker,
                 'sector': info.get('sector'),
@@ -167,7 +145,6 @@ class DataFetcher:
         """
         cache_file = os.path.join(CACHE_DIR, 'metadata_cache.pkl')
         
-        # 1. 尝试从磁盘缓存加载
         try:
             if os.path.exists(cache_file):
                 with open(cache_file, 'rb') as f:
@@ -175,15 +152,12 @@ class DataFetcher:
                 cache_time = cached_data.get('timestamp')
                 cached_df = cached_data.get('data')
                 
-                # 缓存有效期为 24 小时
                 if cache_time and (datetime.now() - cache_time) < timedelta(hours=24):
                     logger.info(f"从磁盘缓存加载 {len(cached_df)} 条元数据")
-                    # 只返回请求的 tickers
                     return cached_df[cached_df['ticker'].isin(tickers)]
         except Exception as e:
             logger.warning(f"加载元数据缓存失败: {e}")
 
-        # 2. 如果缓存无效或不存在，则并行获取
         logger.info(f"开始并行获取 {len(tickers)} 只股票的元数据...")
         all_meta = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -198,7 +172,6 @@ class DataFetcher:
         
         meta_df = pd.DataFrame(all_meta)
         
-        # 3. 保存到磁盘缓存
         try:
             with open(cache_file, 'wb') as f:
                 pickle.dump({'timestamp': datetime.now(), 'data': meta_df}, f)
