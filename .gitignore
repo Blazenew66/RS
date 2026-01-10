@@ -1,53 +1,19 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# 忽略本地数据文件夹
+/data/
 
-# 虚拟环境
+# 忽略运行时生成的缓存文件
+/.cache/
+/__pycache__/
+*.pyc
+
+# 忽略输出的日志和CSV结果
+/output/
+
+# 忽略虚拟环境文件夹
+.venv/
 venv/
-env/
 ENV/
-.venv
 
-# 输出文件
-output/
-*.csv
-*.log
-
-# 缓存文件
-.cache/
-*.pkl
-
-# IDE
+# 忽略IDE配置文件
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# 系统文件
-.DS_Store
-Thumbs.db
-
-# 测试
-.pytest_cache/
-.coverage
-htmlcov/
-
