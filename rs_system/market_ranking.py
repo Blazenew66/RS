@@ -181,67 +181,50 @@ def get_russell1000_static_list() -> List[str]:
 
 def get_combined_index_tickers() -> List[str]:
     """
-    整合标普500、纳斯达克100与罗素1000指数作为基准
-    移除重复标的
-    
-    如果在线获取失败，使用完整的 Russell 1000 静态列表作为后备
+    从本地 data/ 文件夹动态扫描所有 .US.txt 和 .US.csv 文件，
+    提取股票代码列表。
     
     Returns:
-        整合后的股票代码列表（去重，至少 1000 只，最多 1500 只）
+        list: 股票代码列表（例如 ['AAPL', 'MSFT', 'SPY', ...]）
     """
-    all_tickers = []
+    from rs_system.config import STOOQ_DATA_DIR
+    import os
     
-    # 1. 尝试获取 S&P 500
-    sp500_tickers = get_sp500_tickers()
-    if sp500_tickers:
-        all_tickers.extend(sp500_tickers)
-        logger.info(f"S&P 500: {len(sp500_tickers)} 只股票")
-    else:
-        logger.warning("S&P 500 获取失败，将使用静态列表")
+    tickers = set()
+    data_dir = STOOQ_DATA_DIR
     
-    # 2. 尝试获取 NASDAQ 100
-    nasdaq100_tickers = get_nasdaq100_tickers()
-    if nasdaq100_tickers:
-        all_tickers.extend(nasdaq100_tickers)
-        logger.info(f"NASDAQ 100: {len(nasdaq100_tickers)} 只股票")
-    else:
-        logger.warning("NASDAQ 100 获取失败，将使用静态列表")
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(
+            f"数据目录不存在: {data_dir}\n"
+            f"请确保在项目根目录下创建 {data_dir} 文件夹，并放入 Stooq 数据文件。"
+        )
     
-    # 3. 始终使用完整的 Russell 1000 静态列表作为补充（确保覆盖完整）
-    # 即使在线获取成功，也添加静态列表以确保覆盖 Russell 1000 的所有股票
-    logger.info("添加 Russell 1000 静态列表以确保完整覆盖")
-    russell_static = get_russell1000_static_list()
-    all_tickers.extend(russell_static)
+    # 扫描所有 .us.txt、.US.txt、.us.csv、.US.csv 文件（大小写不敏感）
+    for filename in os.listdir(data_dir):
+        filename_lower = filename.lower()
+        if filename_lower.endswith('.us.txt') or filename_lower.endswith('.us.csv'):
+            # 提取股票代码：例如 "AAPL.us.txt" 或 "aapl.US.txt" -> "AAPL"
+            # 先转换为小写，然后移除后缀，最后转大写
+            ticker = filename_lower.replace('.us.txt', '').replace('.us.csv', '').upper()
+            if ticker:
+                tickers.add(ticker)
     
-    # 去重并排序
-    unique_tickers = sorted(list(set(all_tickers)))
+    if not tickers:
+        raise ValueError(
+            f"在 {data_dir} 目录中未找到任何 .US.txt 或 .US.csv 文件。\n"
+            f"请确保已将 Stooq 数据文件放入该目录。"
+        )
     
-    # 过滤掉无效的股票代码
-    valid_tickers = [t for t in unique_tickers if t and len(t) <= 5 and t.replace('-', '').replace('.', '').isalnum()]
+    # 检查 SPY 是否存在（必需的市场基准）
+    if 'SPY' not in tickers:
+        raise FileNotFoundError(
+            f"未找到市场基准文件 SPY.US.txt 或 SPY.US.csv。\n"
+            f"SPY 是计算相对强度的必需基准，请确保 {data_dir} 目录中包含 SPY 数据文件。"
+        )
     
-    logger.info(f"整合后共 {len(valid_tickers)} 只唯一股票（S&P 500 + NASDAQ 100 + Russell 1000）")
-    
-    # 确保至少有 1000 只股票（最少要求，即使抓取失败也有1000+只）
-    min_tickers = 1000
-    
-    # 如果在线获取失败或数量不足，始终使用静态列表补充
-    if len(valid_tickers) < min_tickers:
-        logger.warning(f"股票数量不足 {min_tickers} 只（{len(valid_tickers)}），使用静态列表补充")
-        russell_static = get_russell1000_static_list()
-        all_combined = list(set(valid_tickers + russell_static))
-        valid_tickers = sorted(all_combined)
-        logger.info(f"补充后共 {len(valid_tickers)} 只股票")
-    
-    # 如果仍然不足，记录警告但返回所有可用的股票
-    if len(valid_tickers) < min_tickers:
-        logger.warning(f"⚠️ 股票数量仍然不足 {min_tickers} 只（{len(valid_tickers)}），静态列表可能需要扩展")
-    
-    # 返回所有获取到的股票（移除任何数量限制，确保完整分析）
-    final_tickers = valid_tickers
-    
-    logger.info(f"最终使用 {len(final_tickers)} 只股票进行市场分布计算（目标: 至少 {min_tickers} 只，实际: {len(final_tickers)} 只）")
-    
-    return final_tickers
+    ticker_list = sorted(list(tickers))
+    logger.info(f"✅ 从本地数据目录加载了 {len(ticker_list)} 只股票")
+    return ticker_list
 
 
 def _calculate_single_ticker_rs(
@@ -251,51 +234,52 @@ def _calculate_single_ticker_rs(
     calculator: RSCalculator
 ) -> Optional[Tuple[str, float, pd.Series, pd.DataFrame]]:
     """
-    计算单个股票的 RS 分数（用于并行计算）
-    
-    Returns:
-        (ticker, weighted_rs, rs_line_series, price_data) 或 None
-        rs_line_series 是完整的时间序列
+    计算单个股票的 RS 分数（用于并行计算），并提供详细的失败日志。
     """
     try:
         df = fetcher.fetch_single_ticker(ticker)
         if df is None or df.empty:
-            logger.debug(f"{ticker}: 数据获取失败或为空")
+            # fetch_single_ticker 内部已经记录了失败原因，这里不再重复
             return None
-        
+
         if 'Date' in df.columns:
             df = df.set_index('Date')
-        
-        # 使用 Adjusted Close（优先）
+
+        # 检查价格列
         price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
-        stock_price_series = df[price_col]
-        
-        if len(stock_price_series) < 252:
-            logger.debug(f"{ticker}: 数据点不足（{len(stock_price_series)} < 252）")
+        if price_col not in df.columns:
+            logger.warning(f"❌ {ticker}: 数据文件中缺少 'Adj Close' 或 'Close' 列，跳过计算。")
             return None
-        
-        # 确保市场基准也使用 Adjusted Close（统一处理，避免重复判断）
-        # market_benchmark 应该已经在外部统一处理过 Adj Close
+        stock_price_series = df[price_col]
+
+        # 检查数据点数量
+        from rs_system.config import MIN_DATA_POINTS
+        if len(stock_price_series.dropna()) < MIN_DATA_POINTS:
+            logger.warning(f"❌ {ticker}: 有效数据点不足 ({len(stock_price_series.dropna())} < {MIN_DATA_POINTS})，跳过计算。")
+            return None
+
+        # 准备市场基准数据
         if 'Date' in market_benchmark.columns:
             market_df = market_benchmark.set_index('Date')
         else:
             market_df = market_benchmark.copy()
-        
-        # 统一使用 Adj Close（如果存在）
         market_price_col = 'Adj Close' if 'Adj Close' in market_df.columns else 'Close'
         market_price_series = market_df[market_price_col]
-        
-        # 计算加权 RS 和 RS Line（RS Line 现在是完整时间序列）
+
+        # 计算加权 RS 和 RS Line
         result = calculator.calculate_rs_raw(stock_price_series, market_price_series)
         if result is not None:
             weighted_rs, rs_line_series = result
-            logger.debug(f"{ticker}: RS计算成功 (weighted_rs={weighted_rs:.2f}, rs_line长度={len(rs_line_series)})")
+            logger.debug(f"✅ {ticker}: RS 计算成功 (原始值={weighted_rs:.2f})")
             return (ticker, weighted_rs, rs_line_series, df)
         else:
-            logger.debug(f"{ticker}: RS计算返回 None")
+            logger.warning(f"❌ {ticker}: RS 原始值计算返回 None，可能是数据对齐或周期不足导致，跳过。")
             return None
+            
     except Exception as e:
-        logger.debug(f"{ticker}: 计算失败 - {e}")
+        import traceback
+        logger.error(f"❌ {ticker}: 在 RS 计算过程中发生未预料的异常: {type(e).__name__} - {e}")
+        logger.debug(traceback.format_exc()) # 在 debug 模式下输出完整堆栈
         return None
 
 

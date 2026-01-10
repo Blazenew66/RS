@@ -171,12 +171,12 @@ st.markdown("""
 
 # 主标题
 st.markdown('<h1 class="main-title">📈 RS Ranking Pro</h1>', unsafe_allow_html=True)
-st.markdown("**专业级 IBD 风格相对强度排名系统 | 基于 S&P 500 + NASDAQ 100 + Russell 1000 市场范围分析**")
+st.markdown("**专业级 IBD 风格相对强度排名系统 | 基于本地 Stooq 数据文件自动扫描股票池**")
 
 # 缓存装饰器
 @st.cache_data(ttl=3600)
 def get_cached_combined_tickers():
-    """获取并缓存整合指数股票列表（S&P 500 + NASDAQ 100 + Russell 1000）"""
+    """获取并缓存从本地数据目录扫描的股票列表"""
     return get_combined_index_tickers()
 
 # 侧边栏配置
@@ -211,9 +211,15 @@ with st.sidebar:
     st.markdown("#### ℹ️ 系统说明")
     st.markdown("""
     **自动分析：**
-    - 系统自动获取市场基准股票（S&P 500 + NASDAQ 100 + Russell 1000）
+    - 系统自动扫描 `data/` 目录中的所有 `.US.txt` 和 `.US.csv` 文件
+    - 提取股票代码并构建股票池
     - 计算所有股票的 IBD 风格 RS Rating（1-99分）
     - 基于市场分布进行百分位排名
+    
+    **数据来源：**
+    - 本地 Stooq 数据文件（优先）
+    - 自动增量更新（检测数据缺口并补齐）
+    - 市场基准：SPY (S&P 500 ETF)
     
     **计算方法：**
     - IBD 风格加权 RS
@@ -234,17 +240,17 @@ if run_button:
     
     try:
         with st.spinner("正在计算市场范围 RS 排名..."):
-            # 步骤1: 获取整合指数列表（S&P 500 + NASDAQ 100 + Russell 1000）
-            status_text.text("📥 获取市场股票列表（S&P 500 + NASDAQ 100 + Russell 1000）...")
+            # 步骤1: 从本地数据目录扫描股票列表
+            status_text.text("📥 扫描本地数据目录，加载股票列表...")
             progress_bar.progress(10)
             market_tickers = get_cached_combined_tickers()
             
-            if not market_tickers or len(market_tickers) < 100:
-                st.error(f"❌ 无法获取足够的市场股票列表（当前：{len(market_tickers) if market_tickers else 0} 只）")
+            if not market_tickers or len(market_tickers) < 10:
+                st.error(f"❌ 无法获取足够的股票列表（当前：{len(market_tickers) if market_tickers else 0} 只）")
                 st.stop()
             
             # 步骤2: 计算市场范围排名（直接使用市场股票列表作为分析目标）
-            status_text.text(f"📊 计算市场范围排名（分析 {len(market_tickers)} 只市场股票，使用缓存加速）...")
+            status_text.text(f"📊 计算市场范围排名（分析 {len(market_tickers)} 只股票，使用缓存加速）...")
             progress_bar.progress(30)
             
             # 创建进度回调函数（用于在计算过程中更新进度）
@@ -270,6 +276,49 @@ if run_button:
             
             if rankings_df is None or rankings_df.empty:
                 st.error("❌ 未能计算出排名结果")
+                with st.expander("🔍 点击查看诊断信息和解决方案"):
+                    from rs_system.config import DATA_SOURCE_MODE, STOOQ_DATA_DIR, MARKET_BENCHMARK
+                    import os
+
+                    st.markdown(f"**当前数据源模式**: `{DATA_SOURCE_MODE}`")
+
+                    if DATA_SOURCE_MODE == 'local_stooq':
+                        st.markdown("#### 1. 检查本地数据文件夹")
+                        if os.path.isdir(STOOQ_DATA_DIR):
+                            st.success(f"✅ 文件夹 `{STOOQ_DATA_DIR}/` 存在。")
+                        else:
+                            st.error(f"❌ 文件夹 `{STOOQ_DATA_DIR}/` 不存在！")
+                            st.markdown(f"**解决方案**：请在项目根目录（`E:\\PythonFile\\RS`）下创建一个名为 `{STOOQ_DATA_DIR}` 的文件夹。")
+                            st.stop()
+
+                        st.markdown("#### 2. 检查市场基准文件 (SPY)")
+                        spy_base_path = os.path.join(STOOQ_DATA_DIR, f"{MARKET_BENCHMARK.upper()}.US")
+                        spy_txt_path = f"{spy_base_path}.txt"
+                        spy_csv_path = f"{spy_base_path}.csv"
+
+                        if os.path.exists(spy_txt_path) or os.path.exists(spy_csv_path):
+                            st.success(f"✅ 市场基准文件 `{MARKET_BENCHMARK.upper()}.US.txt` 或 `.csv` 已找到。")
+                        else:
+                            st.error(f"❌ 市场基准文件 `{MARKET_BENCHMARK.upper()}.US.txt` 或 `.csv` 在 `{STOOQ_DATA_DIR}/` 中未找到！")
+                            st.markdown(f"**解决方案**：请从 Stooq 或其他数据源下载 SPY 的历史数据，并将其保存到 `{STOOQ_DATA_DIR}/` 文件夹中。这是计算相对强度的核心，必须存在。")
+                            st.stop()
+
+                    st.markdown("#### 3. 检查股票池和数据获取")
+                    if market_tickers:
+                        st.success(f"✅ 成功加载了 {len(market_tickers)} 只股票的代码列表。")
+                        st.info("大多数股票数据获取失败。这通常是以下原因之一：")
+                        st.markdown("""
+                        - **本地文件缺失**: `data` 文件夹中缺少大部分股票的 `.us.txt` 文件。
+                        - **yfinance备用方案失败**: 当本地文件缺失时，系统尝试使用 yfinance 下载，但因网络问题（需要代理）或SSL证书问题而失败。
+                        
+                        **解决方案**：
+                        1.  **确保 `data` 文件夹中有足够的 `.us.txt` 数据文件**。
+                        2.  如果依赖 yfinance 补丁或备用下载，请确保您的网络可以访问 `finance.yahoo.com`。
+                        3.  查看终端/控制台输出的详细错误日志，可能会有 `ConnectionError` 或 `SSLError` 等提示。
+                        """)
+                    else:
+                        st.error("❌ 未能加载任何股票代码列表。")
+                        st.markdown("**解决方案**：请检查 `data/` 目录中是否包含 `.US.txt` 或 `.US.csv` 文件。系统会自动扫描该目录中的所有数据文件并提取股票代码。")
                 st.stop()
             
             # 步骤3: 计算额外指标
@@ -381,7 +430,7 @@ if run_button:
             status_text.empty()
 
             # 成功提示
-            st.success(f"✅ 成功分析 {len(rankings_df)} 只市场基准股票（S&P 500 + NASDAQ 100 + Russell 1000）")
+            st.success(f"✅ 成功分析 {len(rankings_df)} 只股票（从本地 `data/` 目录自动扫描）")
             
             # 统计信息卡片（美化）
             st.markdown("---")
@@ -685,7 +734,7 @@ else:
         
         #### ✨ 核心功能
         
-        - **📊 自动市场分析**: 自动获取并分析 S&P 500 + NASDAQ 100 + Russell 1000 市场基准股票（800-1000只）
+        - **📊 自动市场分析**: 自动扫描 `data/` 目录中的所有 Stooq 数据文件，构建股票池并进行分析
         - **⚖️ IBD 加权计算**: 3个月40%，6/9/12个月各20%，使用 Adjusted Close 价格
         - **🔍 技术指标分析**: SMA50距离、RS Trend、Volume Surge
         - **📈 52周新高检测**: 自动识别 RS Line 达到252日新高的股票（🔥标记）
@@ -695,25 +744,33 @@ else:
         #### 🚀 快速开始
         
         1. 点击"开始分析"按钮
-        2. 系统自动获取市场基准股票列表（S&P 500 + NASDAQ 100 + Russell 1000）
-        3. 计算所有股票的 IBD RS Rating（1-99分）
-        4. 查看完整排名结果和技术指标
-        5. 可选择启用"仅显示领导者股票"过滤器
-        6. 选择股票查看详细图表分析
+        2. 系统自动扫描 `data/` 目录，加载所有 `.US.txt` 和 `.US.csv` 文件
+        3. 提取股票代码并构建股票池
+        4. 计算所有股票的 IBD RS Rating（1-99分）
+        5. 查看完整排名结果和技术指标
+        6. 可选择启用"仅显示领导者股票"过滤器
+        7. 选择股票查看详细图表分析
         """)
     
     with welcome_col2:
         st.markdown("""
-        ### 📋 市场基准范围
+        ### 📋 数据来源与股票池
         
-        **自动分析股票池：**
-        - S&P 500 成分股
-        - NASDAQ 100 成分股  
-        - Russell 1000 成分股
+        **数据来源：**
+        - 本地 Stooq 数据文件（`.US.txt` 或 `.US.csv`）
+        - 自动增量更新（检测数据缺口并使用在线数据源补齐）
+        - 市场基准：SPY (S&P 500 ETF)
         
-        **总计：800-1000 只股票（至少800只，最多1000只）**
+        **股票池构建：**
+        - 自动扫描 `data/` 目录中的所有数据文件
+        - 从文件名提取股票代码（例如 `AAPL.US.txt` → `AAPL`）
+        - 自动去重并构建完整的股票池
         
-        *系统会自动去重并整合这些指数成分股，建立完整的市场分布基准。*
+        **数据要求：**
+        - 必须包含 `SPY.US.txt` 或 `SPY.US.csv` 作为市场基准
+        - 建议包含足够数量的股票数据文件以确保排名准确性
+        
+        *系统完全基于本地数据文件运行，无需依赖在线数据源即可完成分析。*
         """)
     
     st.markdown("---")
