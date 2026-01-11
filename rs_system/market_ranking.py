@@ -349,7 +349,8 @@ def calculate_market_wide_rs_ranking(
     user_tickers: List[str],
     market_tickers: List[str],
     use_cache: bool = True,
-    max_workers: int = 10
+    max_workers: int = 10,
+    progress_callback: Optional[callable] = None
 ) -> tuple:
     """
     计算市场范围的 RS 排名（支持并行计算和本地缓存）
@@ -414,10 +415,18 @@ def calculate_market_wide_rs_ranking(
             }
             
             completed = 0
+            total = len(market_tickers)
             for future in as_completed(futures):
                 completed += 1
-                if completed % 50 == 0:
-                    logger.info(f"已处理 {completed}/{len(market_tickers)} 只股票... (成功: {success_count}, 失败: {fail_count})")
+                
+                # 更新进度（每10只股票或每50只股票记录一次）
+                if completed % 10 == 0 or completed % 50 == 0:
+                    logger.info(f"已处理 {completed}/{total} 只股票... (成功: {success_count}, 失败: {fail_count})")
+                    if progress_callback:
+                        try:
+                            progress_callback(completed, total, f"计算市场RS排名: 成功 {success_count}, 失败 {fail_count}")
+                        except:
+                            pass  # 忽略回调错误
                 
                 result = future.result()
                 if result is not None:
@@ -472,7 +481,19 @@ def calculate_market_wide_rs_ranking(
                 for ticker in user_tickers_to_calc
             }
             
+            completed = 0
+            total = len(user_tickers_to_calc)
             for future in as_completed(futures):
+                completed += 1
+                
+                # 更新进度
+                if completed % 10 == 0 or completed == total:
+                    if progress_callback:
+                        try:
+                            progress_callback(completed, total, f"计算用户股票RS: 成功 {user_success_count}, 失败 {user_fail_count}")
+                        except:
+                            pass
+                
                 result = future.result()
                 if result is not None:
                     ticker, weighted_rs, rs_line_series, price_data = result
@@ -543,11 +564,18 @@ def calculate_market_wide_rs_ranking(
     for ticker, data in user_rs_data.items():
         rs_raw = data['rs_raw']
         
-        # 使用 scipy.stats.percentileofscore 计算百分位
+        # 使用 scipy.stats.percentileofscore 计算百分位（返回0-100）
         percentile = percentileofscore(market_rs_values, rs_raw, kind='rank')
         
-        # 映射到 1-99 区间
-        rs_score = max(1, min(99, int(percentile)))
+        # 映射到 1-99 区间（IBD风格）
+        # percentile 0 -> rs_score 1, percentile 100 -> rs_score 99
+        # 线性映射：rs_score = 1 + (percentile / 100) * 98
+        if percentile <= 0:
+            rs_score = 1
+        elif percentile >= 100:
+            rs_score = 99
+        else:
+            rs_score = int(1 + (percentile / 100.0) * 98)
         
         results.append({
             'ticker': ticker,

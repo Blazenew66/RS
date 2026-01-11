@@ -110,7 +110,7 @@ def load_stooq_data_for_ticker(ticker: str, data_dir: str) -> Optional[pd.DataFr
 
     logger.debug(f"{ticker}: 成功从 {os.path.basename(file_path)} 加载 {len(df)} 条本地数据")
 
-    # 增量补丁更新逻辑
+    # 增量补丁更新逻辑（优化：如果数据足够新，跳过更新）
     from rs_system.config import STOOQ_DATA_PATCH
     if STOOQ_DATA_PATCH:
         from datetime import datetime, timedelta
@@ -118,6 +118,13 @@ def load_stooq_data_for_ticker(ticker: str, data_dir: str) -> Optional[pd.DataFr
 
         last_date = df['Date'].max()
         today = datetime.now()
+        
+        # 计算交易日差（简单估算：工作日约5天/周）
+        days_since_last = (today.date() - last_date.date()).days
+        # 如果数据在最近5个交易日内（约7个自然日），认为数据足够新，跳过更新
+        if days_since_last <= 7:
+            logger.debug(f"{ticker}: 本地数据足够新（最后日期: {last_date.date()}，距今 {days_since_last} 天），跳过增量更新")
+            return df
 
         if last_date.date() < today.date() - timedelta(days=1):
             start_date = last_date + timedelta(days=1)
@@ -129,7 +136,6 @@ def load_stooq_data_for_ticker(ticker: str, data_dir: str) -> Optional[pd.DataFr
                     start=start_date.strftime('%Y-%m-%d'),
                     end=today.strftime('%Y-%m-%d'),
                     progress=False,
-                    verify=False,
                     threads=False
                 )
 

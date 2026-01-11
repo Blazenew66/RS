@@ -102,29 +102,9 @@ class RSCalculator:
             market_return = market_returns.get(period)
             
             if stock_return is not None and market_return is not None:
-                # 计算相对强度比率：股票表现 / 市场表现
-                # 处理市场收益率为0或接近0的边缘情况
-                if abs(market_return) < 0.001:  # 市场收益率接近0（更严格：0.1%）
-                    # 如果市场几乎没变化（<0.1%），使用差值作为后备
-                    relative_strength = stock_return - market_return
-                else:
-                    # 使用比率：转换为倍数关系
-                    # 例如：股票涨50%，市场涨10% => 50/10 = 5.0倍
-                    # 为了保持数值范围合理，我们使用对数比率或标准化比率
-                    # 方法1：直接比率（可能数值过大）
-                    # relative_strength = stock_return / market_return
-                    
-                    # 方法2：使用相对表现比率（更稳定）
-                    # 将百分比转换为倍数：(1 + stock_return/100) / (1 + market_return/100)
-                    stock_multiple = 1 + stock_return / 100.0
-                    market_multiple = 1 + market_return / 100.0
-                    
-                    if market_multiple > 0:
-                        relative_strength_ratio = stock_multiple / market_multiple
-                        # 转换回百分比形式，使其与差值法在数值范围上可比
-                        relative_strength = (relative_strength_ratio - 1) * 100
-                    else:
-                        # 市场下跌超过100%（极端情况），使用差值
+                # IBD RS 计算方法：使用差值法（股票收益率 - 市场收益率）
+                # 这是IBD官方方法，简单且有效
+                # 例如：股票涨50%，市场涨10% => RS = 50 - 10 = 40%
                         relative_strength = stock_return - market_return
                 
                 weighted_rs += relative_strength * weight
@@ -165,8 +145,9 @@ class RSCalculator:
             
             # 对齐日期索引（只保留两个序列都有的日期）
             common_dates = stock_prices.index.intersection(market_prices.index)
-            if len(common_dates) < max(RS_PERIOD_12M + 1, 10):
-                logger.warning(f"数据日期对齐后不足，只有 {len(common_dates)} 个交易日")
+            # 至少需要 RS_PERIOD_12M 个交易日（252天），允许少量缺失
+            if len(common_dates) < RS_PERIOD_12M:
+                logger.warning(f"数据日期对齐后不足，只有 {len(common_dates)} 个交易日（需要至少 {RS_PERIOD_12M} 个）")
                 return None
             
             stock_prices = stock_prices.loc[common_dates].sort_index()

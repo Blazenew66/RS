@@ -190,6 +190,21 @@ with st.sidebar:
         st.cache_data.clear()
         st.success("✅ 缓存已清除")
     
+    # 增量更新配置
+    from rs_system.config import STOOQ_DATA_PATCH
+    enable_patch = st.checkbox(
+        "启用增量数据更新",
+        value=STOOQ_DATA_PATCH,
+        help="如果启用，系统会尝试从 yfinance 获取缺失的最新数据。\n⚠️ 注意：由于网络和SSL证书问题，可能导致扫描变慢。如果本地数据足够新（最近7天内），建议关闭此选项以加快速度。"
+    )
+    # 临时修改配置（仅本次运行有效）
+    if not enable_patch:
+        import rs_system.config
+        rs_system.config.STOOQ_DATA_PATCH = False
+    else:
+        import rs_system.config
+        rs_system.config.STOOQ_DATA_PATCH = True
+    
     st.markdown("---")
     
     # 过滤器
@@ -203,6 +218,24 @@ with st.sidebar:
         "仅显示第二阶段趋势",
         value=False,
         help="筛选条件：\n• Price > SMA50 > SMA150 > SMA200"
+    )
+    
+    st.markdown("---")
+    st.markdown("#### 💰 价格和成交量筛选")
+    min_price = st.number_input(
+        "最低股价 ($)",
+        min_value=0.0,
+        value=5.0,
+        step=1.0,
+        help="只显示股价 ≥ 此价格的股票（过滤掉低于此价格的仙股）"
+    )
+    min_avg_volume = st.number_input(
+        "最低平均成交量",
+        min_value=0,
+        value=100000,
+        step=10000,
+        format="%d",
+        help="只显示平均成交量 ≥ 此值的股票（过滤掉低于此值的股票，基于最近20个交易日）"
     )
     
     st.markdown("---")
@@ -259,13 +292,16 @@ if run_button:
                     progress = 30 + int((current / total) * 15)  # 30-45% 用于市场RS计算
                     progress_bar.progress(progress)
                     if stage:
-                        status_text.text(f"📊 {stage} ({current}/{total})")
+                        status_text.text(f"📊 {stage}")
+                    else:
+                        status_text.text(f"📊 计算市场RS排名... ({current}/{total})")
             
             result = calculate_market_wide_rs_ranking(
                 user_tickers=market_tickers,  # 直接使用市场股票列表作为分析目标
                 market_tickers=market_tickers,  # 使用相同的股票列表建立分布
                 use_cache=True,
-                max_workers=10  # 并行计算线程数
+                max_workers=10,  # 并行计算线程数
+                progress_callback=update_progress_callback
             )
             
             if isinstance(result, tuple):
@@ -419,6 +455,73 @@ if run_button:
                 rankings_df = rankings_df[rankings_df['is_stage2'] == True].copy()
                 if rankings_df.empty:
                     st.warning("⚠️ 没有股票符合第二阶段趋势条件")
+                    st.stop()
+            
+            # 应用价格和成交量筛选
+            if min_price > 0 or min_avg_volume > 0:
+                original_count = len(rankings_df)
+                
+                def get_price_and_volume(row):
+                    """从price_data中提取最新价格和平均成交量"""
+                    price_data = row.get('price_data')
+                    if price_data is None:
+                        return None, None
+                    
+                    try:
+                        # 处理DataFrame格式
+                        if isinstance(price_data, pd.DataFrame):
+                            if 'Date' in price_data.columns:
+                                df = price_data.set_index('Date').sort_index()
+                            else:
+                                df = price_data.copy()
+                            
+                            # 获取最新价格（使用Adj Close，如果没有则用Close）
+                            price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
+                            if price_col in df.columns:
+                                latest_price = df[price_col].iloc[-1] if len(df) > 0 else None
+                            else:
+                                latest_price = None
+                            
+                            # 计算平均成交量（最近20个交易日）
+                            volume_col = 'Volume'
+                            if volume_col in df.columns:
+                                recent_volume = df[volume_col].tail(20)
+                                avg_volume = recent_volume.mean() if len(recent_volume) > 0 else 0
+                            else:
+                                avg_volume = None
+                            
+                            return latest_price, avg_volume
+                        else:
+                            return None, None
+                    except Exception as e:
+                        # 静默处理错误，返回None
+                        return None, None
+                
+                # 提取价格和成交量
+                price_volume_data = rankings_df.apply(get_price_and_volume, axis=1)
+                rankings_df['current_price'] = price_volume_data.apply(lambda x: x[0] if x else None)
+                rankings_df['avg_volume'] = price_volume_data.apply(lambda x: x[1] if x else None)
+                
+                # 应用筛选条件
+                if min_price > 0:
+                    rankings_df = rankings_df[
+                        (rankings_df['current_price'].notna()) & 
+                        (rankings_df['current_price'] >= min_price)
+                    ].copy()
+                
+                if min_avg_volume > 0:
+                    rankings_df = rankings_df[
+                        (rankings_df['avg_volume'].notna()) & 
+                        (rankings_df['avg_volume'] >= min_avg_volume)
+                    ].copy()
+                
+                filtered_count = len(rankings_df)
+                if filtered_count < original_count:
+                    removed_count = original_count - filtered_count
+                    st.info(f"ℹ️ 价格/成交量筛选：从 {original_count} 只股票筛选到 {filtered_count} 只股票（已过滤掉 {removed_count} 只不符合条件的股票）")
+                
+                if rankings_df.empty:
+                    st.warning(f"⚠️ 没有股票符合筛选条件：股价 ≥ ${min_price} 且平均成交量 ≥ {min_avg_volume:,}")
                     st.stop()
         
             # with st.spinner 块结束，开始显示结果
