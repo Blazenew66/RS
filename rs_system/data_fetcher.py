@@ -73,8 +73,7 @@ class DataFetcher:
                     interval=YFINANCE_INTERVAL,
                     timeout=DATA_FETCH_TIMEOUT,
                     threads=False,
-                    progress=False,
-                    verify=False  # 强制跳过 SSL 证书验证
+                    progress=False
                 )
                 if isinstance(df.columns, pd.MultiIndex):
                     df = df.droplevel(0, axis=1)

@@ -105,7 +105,7 @@ class RSCalculator:
                 # IBD RS 计算方法：使用差值法（股票收益率 - 市场收益率）
                 # 这是IBD官方方法，简单且有效
                 # 例如：股票涨50%，市场涨10% => RS = 50 - 10 = 40%
-                        relative_strength = stock_return - market_return
+                relative_strength = stock_return - market_return
                 
                 weighted_rs += relative_strength * weight
                 total_weight += weight

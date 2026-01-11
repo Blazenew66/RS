@@ -27,6 +27,13 @@ from rs_system.indicators import (
     calculate_volatility_contraction,
     is_stage2_trend
 )
+from rs_system.pivot_point import check_pivot_breakout
+from rs_system.market_direction import analyze_market_direction
+from rs_system.industry_rs import get_stock_industry_rs, analyze_all_industries
+from rs_system.vcp_pattern import identify_vcp_pattern, check_vcp_breakout
+from rs_system.price_patterns import identify_all_patterns
+from rs_system.sector_classifier import classify_stock_sector
+from rs_system.sector_classifier import classify_stock_sector
 from rs_system.rs_history import calculate_rs_1w_ago
 from rs_system.data_fetcher import DataFetcher
 from rs_system.config import MARKET_BENCHMARK
@@ -35,6 +42,7 @@ import logging
 
 # 配置日志
 logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # 页面配置（必须在所有 Streamlit 命令之前）
 st.set_page_config(
@@ -357,12 +365,63 @@ if run_button:
                         st.markdown("**解决方案**：请检查 `data/` 目录中是否包含 `.US.txt` 或 `.US.csv` 文件。系统会自动扫描该目录中的所有数据文件并提取股票代码。")
                 st.stop()
             
-            # 步骤3: 计算额外指标
-            status_text.text("🔧 计算技术指标（SMA50、RS Trend、Volume、RS Line 52W High、RS 1W Change、趋势强度、波动率收缩）...")
-            progress_bar.progress(50)
+            # 步骤3: 分析市场环境
+            status_text.text("🌍 分析市场环境...")
+            progress_bar.progress(45)
             
             fetcher = DataFetcher()
             market_benchmark = fetcher.fetch_single_ticker(MARKET_BENCHMARK)
+            
+            # 初始化行业RS数据（在计算指标前先分析行业）
+            industry_rs_data = {}
+            
+            # 步骤4: 分析行业相对强度
+            if market_benchmark is not None and not market_benchmark.empty:
+                try:
+                    industry_rs_data = analyze_all_industries(market_benchmark, fetcher)
+                except Exception as e:
+                    logger.warning(f"行业分析失败: {e}")
+            
+            # 分析市场方向
+            market_direction = None
+            if market_benchmark is not None and not market_benchmark.empty:
+                try:
+                    # 收集部分股票数据用于市场分布分析（采样，避免太慢）
+                    sample_tickers = market_tickers[:min(500, len(market_tickers))] if len(market_tickers) > 500 else market_tickers
+                    sample_price_data = {}
+                    for ticker in sample_tickers[:100]:  # 只采样100只股票用于市场分布
+                        try:
+                            df = fetcher.fetch_single_ticker(ticker)
+                            if df is not None and not df.empty:
+                                sample_price_data[ticker] = df
+                        except:
+                            pass
+                    
+                    market_direction = analyze_market_direction(
+                        market_benchmark,
+                        market_tickers,
+                        sample_price_data
+                    )
+                except Exception as e:
+                    logger.warning(f"市场环境分析失败: {e}")
+            
+            # 步骤5: 计算额外指标
+            status_text.text("🔧 计算技术指标（SMA50、RS Trend、Volume、买入点、VCP、价格形态、趋势强度、板块分类）...")
+            progress_bar.progress(50)
+            
+            # 批量获取股票元数据（sector和industry）
+            logger.info("获取股票板块信息...")
+            tickers_list = rankings_df['ticker'].tolist()
+            try:
+                metadata_df = fetcher.fetch_multiple_metadata(tickers_list, max_workers=10)
+                # 创建ticker到sector/industry的映射
+                ticker_to_sector = dict(zip(metadata_df['ticker'], metadata_df['sector']))
+                ticker_to_industry = dict(zip(metadata_df['ticker'], metadata_df['industry']))
+                logger.info(f"成功获取 {len(metadata_df)} 只股票的板块信息")
+            except Exception as e:
+                logger.warning(f"获取板块信息失败: {e}，将使用默认值")
+                ticker_to_sector = {}
+                ticker_to_industry = {}
             
             indicators_data = []
             total_stocks = len(rankings_df)
@@ -407,6 +466,44 @@ if run_button:
                 volatility_contraction = calculate_volatility_contraction(price_data, days=10)
                 is_stage2 = is_stage2_trend(price_data)
                 
+                # 买入点识别
+                pivot_info = None
+                if market_benchmark is not None and not market_benchmark.empty:
+                    try:
+                        pivot_info = check_pivot_breakout(
+                            price_data,
+                            rs_line_series=rs_line_series if isinstance(rs_line_series, pd.Series) else None,
+                            market_price_data=market_benchmark
+                        )
+                    except Exception as e:
+                        logger.debug(f"{ticker} 买入点识别失败: {e}")
+                        pivot_info = None
+                
+                # VCP模式识别
+                vcp_info = None
+                try:
+                    vcp_info = identify_vcp_pattern(price_data)
+                except Exception as e:
+                    logger.debug(f"{ticker} VCP识别失败: {e}")
+                    vcp_info = None
+                
+                # 价格形态识别
+                price_patterns = None
+                try:
+                    price_patterns = identify_all_patterns(price_data)
+                except Exception as e:
+                    logger.debug(f"{ticker} 价格形态识别失败: {e}")
+                    price_patterns = None
+                
+                # 行业相对强度
+                industry_rs = None
+                if market_benchmark is not None and not market_benchmark.empty:
+                    try:
+                        industry_rs = get_stock_industry_rs(ticker, market_benchmark, fetcher)
+                    except Exception as e:
+                        logger.debug(f"{ticker} 行业RS获取失败: {e}")
+                        industry_rs = None
+                
                 # 计算1周前 RS Rating
                 rs_1w_ago = None
                 if market_benchmark is not None and len(market_rs_distribution) > 0:
@@ -416,6 +513,11 @@ if run_button:
                         )
                     except:
                         pass
+                
+                # 获取板块分类（中文）
+                sector_en = ticker_to_sector.get(ticker)
+                industry_en = ticker_to_industry.get(ticker)
+                sector_chinese = classify_stock_sector(ticker, sector_en, industry_en)
                 
                 indicators_data.append({
                     'ticker': ticker,
@@ -428,6 +530,17 @@ if run_button:
                     'trend_strength': trend_strength,
                     'volatility_contraction': volatility_contraction,
                     'rs_1w_ago': rs_1w_ago,
+                    'has_pivot': pivot_info.get('has_pivot') if pivot_info else False,
+                    'pivot_signal': pivot_info.get('signal_strength') if pivot_info else None,
+                    'pivot_price': pivot_info.get('pivot_price') if pivot_info else None,
+                    'resistance_level': pivot_info.get('resistance_level') if pivot_info else None,
+                    'has_vcp': vcp_info.get('has_vcp') if vcp_info else False,
+                    'vcp_strength': vcp_info.get('pattern_strength') if vcp_info else None,
+                    'has_price_pattern': price_patterns.get('has_any_pattern') if price_patterns else False,
+                    'price_pattern_types': [p.get('pattern_type') for p in price_patterns.get('patterns', {}).values() if p and p.get('has_pattern')] if price_patterns else [],
+                    'industry_rs_score': industry_rs.get('rs_score') if industry_rs else None,
+                    'industry_name': industry_rs.get('industry_name') if industry_rs else None,
+                    'sector_chinese': sector_chinese,  # 中文板块
                     'price_data': price_data
                 })
             
@@ -437,12 +550,21 @@ if run_button:
                 rankings_df = rankings_df.merge(
                     indicators_df[['ticker', 'sma50_dist', 'rs_trend_arrow', 'volume_surge', 
                                   'rs_line_52w_high', 'is_leader', 'is_stage2', 
-                                  'trend_strength', 'volatility_contraction', 'rs_1w_ago']],
+                                  'trend_strength', 'volatility_contraction', 'rs_1w_ago',
+                                  'has_pivot', 'pivot_signal', 'pivot_price', 'resistance_level',
+                                  'has_vcp', 'vcp_strength',
+                                  'has_price_pattern', 'price_pattern_types',
+                                  'industry_rs_score', 'industry_name', 'sector_chinese']],
                     on='ticker',
                     how='left'
                 )
                 price_data_dict = dict(zip(indicators_df['ticker'], indicators_df['price_data']))
                 rankings_df['price_data'] = rankings_df['ticker'].map(price_data_dict)
+                
+                # 确保sector_chinese有默认值
+                if 'sector_chinese' not in rankings_df.columns:
+                    rankings_df['sector_chinese'] = '未知'
+                rankings_df['sector_chinese'] = rankings_df['sector_chinese'].fillna('未知')
             
             # 应用过滤器
             if show_only_leaders:
@@ -531,6 +653,53 @@ if run_button:
 
             progress_bar.empty()
             status_text.empty()
+            
+            # 显示市场环境分析
+            if market_direction:
+                st.markdown("---")
+                st.markdown("### 🌍 市场环境分析")
+                
+                market_stage = market_direction.get('market_stage', 'Uncertain')
+                market_trend = market_direction.get('market_trend', 'Sideways')
+                recommendation = market_direction.get('recommendation', '')
+                distribution_ratio = market_direction.get('distribution_ratio', 0.5)
+                spy_above_sma200 = market_direction.get('spy_above_sma200', False)
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    stage_emoji = "🟢" if market_stage == "Bull Market" else "🔴" if market_stage == "Bear Market" else "🟡"
+                    st.metric("市场阶段", f"{stage_emoji} {market_stage}")
+                with col2:
+                    trend_emoji = "⬆️" if market_trend == "Up" else "⬇️" if market_trend == "Down" else "➡️"
+                    st.metric("市场趋势", f"{trend_emoji} {market_trend}")
+                with col3:
+                    st.metric("上涨股票比例", f"{distribution_ratio*100:.1f}%")
+                with col4:
+                    spy_status = "✅ 上方" if spy_above_sma200 else "❌ 下方"
+                    st.metric("SPY vs SMA200", spy_status)
+                
+                st.info(f"**交易建议**: {recommendation}")
+            
+            # 显示行业相对强度分析
+            if industry_rs_data and len(industry_rs_data) > 0:
+                st.markdown("---")
+                st.markdown("### 🏭 行业相对强度排名")
+                
+                # 创建行业数据表格
+                industry_list = []
+                for etf, data in list(industry_rs_data.items())[:10]:  # 显示前10个行业
+                    industry_list.append({
+                        '行业': data.get('industry_name', etf),
+                        'ETF': etf,
+                        'RS评分': data.get('rs_score', 0),
+                        '趋势': data.get('rs_trend', 'N/A'),
+                        'vs市场': f"{data.get('vs_market', 0):+.1f}%" if data.get('vs_market') is not None else "N/A"
+                    })
+                
+                if industry_list:
+                    industry_df = pd.DataFrame(industry_list)
+                    st.dataframe(industry_df, use_container_width=True, hide_index=True)
+                    st.caption("💡 建议优先关注RS评分高的行业中的股票")
 
             # 成功提示
             st.success(f"✅ 成功分析 {len(rankings_df)} 只股票（从本地 `data/` 目录自动扫描）")
@@ -607,6 +776,22 @@ if run_button:
                 lambda x: f"{x:.2f}x" if pd.notna(x) else "N/A"
             )
             
+            # VCP模式显示
+            display_df['vcp_display'] = display_df.apply(
+                lambda row: (
+                    f"✅ {row.get('vcp_strength', '')}" 
+                    if row.get('has_vcp') else "❌"
+                ), axis=1
+            )
+            
+            # 价格形态显示
+            display_df['pattern_display'] = display_df.apply(
+                lambda row: (
+                    ", ".join(row.get('price_pattern_types', [])) 
+                    if row.get('has_price_pattern') and row.get('price_pattern_types') else "❌"
+                ), axis=1
+            )
+            
             # 格式化新指标
             display_df['trend_strength_display'] = display_df['trend_strength'].apply(
                 lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
@@ -622,20 +807,35 @@ if run_button:
             st.markdown("---")
             st.markdown("### 📈 RS 排名表格（按 RS Rating 降序排列）")
             
-            # 表格列（添加新列）
-            table_cols = ['ticker', 'rs_rating_display', 'rs_1w_change', 'sma50_display', 
-                         'rs_trend_display', 'volume_display', 'trend_strength_display', 'volatility_display']
+            # 格式化买入点列（包含价格信息）
+            if 'has_pivot' in display_df.columns:
+                display_df['pivot_display'] = display_df.apply(
+                    lambda row: (
+                        f"✅ {row.get('pivot_signal', '')}" + 
+                        (f" @ ${row.get('pivot_price', 0):.2f}" if row.get('pivot_price') else "")
+                    ) if row.get('has_pivot') else "❌",
+                    axis=1
+                )
+            
+            # 表格列（添加新列，包括板块）
+            table_cols = ['ticker', 'sector_chinese', 'rs_rating_display', 'rs_1w_change', 'sma50_display', 
+                         'rs_trend_display', 'volume_display', 'pivot_display', 'vcp_display', 
+                         'pattern_display', 'trend_strength_display', 'volatility_display']
             table_cols = [col for col in table_cols if col in display_df.columns]
             
             st_df = display_df[table_cols].copy()
             # 更新列名（包含新列）
             column_mapping = {
                 'ticker': '股票代码',
+                'sector_chinese': '所属板块',
                 'rs_rating_display': 'RS Rating',
                 'rs_1w_change': 'RS 1W Change',
                 'sma50_display': 'Price vs SMA50',
                 'rs_trend_display': 'RS Trend',
                 'volume_display': 'Volume Surge',
+                'pivot_display': '买入点',
+                'vcp_display': 'VCP模式',
+                'pattern_display': '价格形态',
                 'trend_strength_display': '趋势强度',
                 'volatility_display': '波动率收缩'
             }
@@ -668,12 +868,16 @@ if run_button:
             
             # 显示选中股票的关键指标
             if selected_ticker:
-                selected_row = rankings_df[rankings_df['ticker'] == selected_ticker].iloc[0]
-                selected_price_data = selected_row.get('price_data')
+                try:
+                    selected_row = rankings_df[rankings_df['ticker'] == selected_ticker].iloc[0]
+                    selected_price_data = selected_row.get('price_data')
+                except (IndexError, KeyError) as e:
+                    st.error(f"❌ 无法找到股票 {selected_ticker} 的数据，请重新选择")
+                    st.stop()
                 
                 # 关键指标卡片
                 with col2:
-                    metric_cols = st.columns(4)
+                    metric_cols = st.columns(5)
                     with metric_cols[0]:
                         st.metric("RS Rating", f"{selected_row['rs_score']:.0f}")
                     with metric_cols[1]:
@@ -685,6 +889,98 @@ if run_button:
                     with metric_cols[3]:
                         is_52w = selected_row.get('rs_line_52w_high', False)
                         st.metric("52W High", "✅" if is_52w else "❌")
+                    with metric_cols[4]:
+                        has_pivot = selected_row.get('has_pivot', False)
+                        pivot_signal = selected_row.get('pivot_signal', '')
+                        pivot_display = f"✅ {pivot_signal}" if has_pivot else "❌"
+                        st.metric("买入点", pivot_display)
+                
+                # 买入点详细信息
+                if selected_row.get('has_pivot'):
+                    with st.expander("📌 买入点详细信息", expanded=False):
+                        pivot_price = selected_row.get('pivot_price')
+                        resistance_level = selected_row.get('resistance_level')
+                        pivot_signal = selected_row.get('pivot_signal', 'N/A')
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.success(f"**买入点信号**: {pivot_signal}")
+                            if pivot_price:
+                                st.metric("**买入价格**", f"${pivot_price:.2f}")
+                        with col2:
+                            if resistance_level:
+                                st.metric("**阻力位**", f"${resistance_level:.2f}")
+                                if pivot_price and resistance_level:
+                                    distance = ((pivot_price - resistance_level) / resistance_level) * 100
+                                    st.caption(f"距离阻力位: {distance:+.2f}%")
+                        st.info("💡 买入点特征：价格突破阻力位 + 成交量放大 + RS Line 上升趋势")
+                elif selected_row.get('resistance_level'):
+                    # 即使没有买入点，也显示阻力位信息（如果有）
+                    resistance_level = selected_row.get('resistance_level')
+                    if resistance_level:
+                        with st.expander("📌 阻力位信息", expanded=False):
+                            st.info(f"**当前阻力位**: ${resistance_level:.2f}")
+                            st.caption("💡 价格尚未突破阻力位，等待买入信号")
+                
+                # VCP模式详细信息
+                if selected_row.get('has_vcp'):
+                    with st.expander("📊 VCP模式详细信息", expanded=False):
+                        st.success(f"**VCP模式强度**: {selected_row.get('vcp_strength', 'N/A')}")
+                        st.info("💡 VCP特征：波动率收缩 + 成交量递减 + 准备突破")
+                
+                # 价格形态详细信息
+                pattern_types = selected_row.get('price_pattern_types', [])
+                if pattern_types:
+                    with st.expander("📈 价格形态详细信息", expanded=False):
+                        for pattern_type in pattern_types:
+                            st.success(f"**识别到形态**: {pattern_type}")
+                        st.info("💡 经典形态：杯柄形态、双底等通常是强势信号")
+                
+                # 行业相对强度
+                industry_rs_score = selected_row.get('industry_rs_score')
+                industry_name = selected_row.get('industry_name')
+                if industry_rs_score is not None:
+                    with st.expander("🏭 行业相对强度", expanded=False):
+                        st.metric("行业", industry_name or "N/A")
+                        st.metric("行业RS评分", f"{industry_rs_score:.0f}")
+                        if industry_rs_score >= 70:
+                            st.success("✅ 该股票所属行业表现强势")
+                        elif industry_rs_score >= 50:
+                            st.info("ℹ️ 该股票所属行业表现中等")
+                        else:
+                            st.warning("⚠️ 该股票所属行业表现较弱")
+                
+                # 基本面信息（异步加载，避免阻塞）
+                with st.expander("📊 基本面分析", expanded=False):
+                    try:
+                        from rs_system.fundamental_screener import get_fundamental_summary
+                        with st.spinner("正在获取基本面数据..."):
+                            fundamental_summary = get_fundamental_summary(selected_ticker)
+                            if fundamental_summary:
+                                fund_data = fundamental_summary['fundamental_data']
+                                screen_result = fundamental_summary['screen_result']
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.markdown("#### 财务指标")
+                                    if fund_data.get('revenue_growth_qoq') is not None:
+                                        st.metric("季度营收增长", f"{fund_data['revenue_growth_qoq']:.1f}%")
+                                    if fund_data.get('earnings_growth_qoq') is not None:
+                                        st.metric("季度盈利增长", f"{fund_data['earnings_growth_qoq']:.1f}%")
+                                    if fund_data.get('roe') is not None:
+                                        st.metric("ROE", f"{fund_data['roe']:.1f}%")
+                                
+                                with col2:
+                                    st.markdown("#### 筛选结果")
+                                    score = screen_result.get('score', 0)
+                                    passes = screen_result.get('passes_screen', False)
+                                    st.metric("基本面评分", f"{score}/100", "✅ 通过" if passes else "❌ 未通过")
+                                    st.caption(screen_result.get('details', ''))
+                            else:
+                                st.warning("⚠️ 无法获取基本面数据（可能需要网络连接或数据源限制）")
+                    except Exception as e:
+                        logger.error(f"获取基本面数据时出错: {str(e)}", exc_info=True)
+                        st.warning(f"⚠️ 获取基本面数据时出错: {str(e)}")
                 
                 # 图表
                 if selected_price_data is not None and market_benchmark is not None:
